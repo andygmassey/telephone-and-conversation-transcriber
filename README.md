@@ -1,8 +1,8 @@
 # Telephone and Conversation Transcriber (Azure Branch)
 
-Real-time speech-to-text caption appliance for a deaf or hard-of-hearing user. Converts speech from phone calls and room conversation into live text on a touchscreen display.
+My elderly father is extremely deaf and struggles to hear people, particularly on the landline phone. So I built this — a Raspberry Pi with a 10" touchscreen that sits next to his phone and transcribes conversations in near real-time, so he can read what people are saying.
 
-This branch uses **Azure Speech Services** (en-GB) with automatic **Vosk** offline fallback.
+This branch uses **Azure Speech Services** (en-GB) with automatic **Vosk** offline fallback. See the `main` branch for the Deepgram/faster-whisper version.
 
 ## Features
 
