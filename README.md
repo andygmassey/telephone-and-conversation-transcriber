@@ -51,7 +51,7 @@ A **USB conference microphone** works best because it picks up sound from all di
 
 ### The phone recorder (optional)
 
-If you want to transcribe landline phone calls too, you'll need a **USB telephone recorder** that plugs into the phone line and the Pi. I used one that cost about $17 — search for "USB telephone recorder RJ-11" on Amazon or AliExpress. It connects between the wall socket and the phone with a standard phone cable, so it hears both sides of the conversation. Most USB telephone recorders with an RJ-11 connection will work.
+If you want to transcribe landline phone calls too, you'll need a **USB telephone recorder** that plugs into the phone line and the Pi. I used [this one from Taobao](https://intl.taobao.com/sk/_b.PbsIYe) (~$17) — search for "USB telephone recorder RJ-11" on Amazon or AliExpress for alternatives. It connects between the wall socket and the phone with a standard phone cable, so it hears both sides of the conversation. Most USB telephone recorders with an RJ-11 connection will work.
 
 ### Total cost
 
