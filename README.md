@@ -4,6 +4,8 @@ My elderly father is extremely deaf and struggles to hear people, particularly o
 
 It picks up both phone calls (via a USB telephone recorder tapped into the landline) and in-room conversation (via a USB conference microphone), and displays live captions in large, clear text. When nobody's talking it shows a nice flip-clock. The whole thing runs headless as a systemd service — plug it in and it just works.
 
+![The transcriber in action — live captions on a 10" touchscreen while Dad's on the phone](photo.jpg)
+
 ## Features
 
 - **Live Captions** - Real-time speech-to-text displayed on a touchscreen
