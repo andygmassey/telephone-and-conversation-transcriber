@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gramps Transcriber Setup</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+
+        <!-- ─── Step 1: Welcome ─────────────────────────────────── -->
+        <div id="step-welcome" class="step active">
+            <h1>Welcome!</h1>
+            <p class="big">Let's get your transcriber up and running.</p>
+            <p>This will only take a few minutes. We'll help you pick your microphones and choose how speech gets turned into text.</p>
+            <p class="muted">You can come back to this page any time to change settings.</p>
+            <button class="btn-primary" onclick="goTo('step-microphones')">Let's go</button>
+        </div>
+
+        <!-- ─── Step 2: Microphones ─────────────────────────────── -->
+        <div id="step-microphones" class="step">
+            <h1>Your microphones</h1>
+            <p>We found these microphones plugged into your Raspberry Pi:</p>
+
+            <div id="devices-loading" class="loading">Looking for microphones...</div>
+            <div id="devices-error" class="error-box" style="display:none">
+                <p>We couldn't find any microphones. Make sure they're plugged in and try again.</p>
+                <button class="btn-secondary" onclick="loadDevices()">Try again</button>
+            </div>
+            <div id="devices-list" style="display:none">
+
+                <div class="field-group">
+                    <label>Room microphone</label>
+                    <p class="help">This is the main microphone that listens to the room. Pick the one that's on the table or desk.</p>
+                    <select id="room-device" class="device-select">
+                        <option value="">-- Choose one --</option>
+                    </select>
+                    <button class="btn-test" onclick="testDevice('room-device')">Test it</button>
+                    <div id="room-device-result" class="test-result"></div>
+                </div>
+
+                <div class="field-group">
+                    <label>Phone recorder <span class="optional">(optional)</span></label>
+                    <p class="help">If you've connected a phone recorder to the landline, choose it here. Skip this if you don't have one.</p>
+                    <select id="phone-device" class="device-select">
+                        <option value="">-- None / skip --</option>
+                    </select>
+                    <button class="btn-test" onclick="testDevice('phone-device')">Test it</button>
+                    <div id="phone-device-result" class="test-result"></div>
+                </div>
+            </div>
+
+            <div class="nav-buttons">
+                <button class="btn-back" onclick="goTo('step-welcome')">Back</button>
+                <button class="btn-primary" onclick="goTo('step-speech')">Next</button>
+            </div>
+        </div>
+
+        <!-- ─── Step 3: Speech engine ───────────────────────────── -->
+        <div id="step-speech" class="step">
+            <h1>How should speech be turned into text?</h1>
+
+            <div class="choice-cards">
+                <div class="choice-card" id="choice-online" onclick="pickSpeechMode('online')">
+                    <div class="choice-radio selected"></div>
+                    <div class="choice-content">
+                        <h3>Use the internet (recommended)</h3>
+                        <p>Sends audio to an online service. Much more accurate — you'll get proper sentences with punctuation. Several free options to choose from.</p>
+                    </div>
+                </div>
+                <div class="choice-card" id="choice-offline" onclick="pickSpeechMode('offline')">
+                    <div class="choice-radio"></div>
+                    <div class="choice-content">
+                        <h3>Work without internet</h3>
+                        <p>Everything stays on your Raspberry Pi. Less accurate, but works even if the internet goes down. You can pick from a few different engines.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Offline model picker (shown when "Work without internet" is selected) -->
+            <div id="offline-model-section" class="offline-model-section" style="display:none">
+                <div class="field-group">
+                    <label>Which offline engine would you like to use?</label>
+                    <select id="offline-model" class="device-select">
+                        <option value="faster-whisper">Faster Whisper (recommended — good accuracy, a few seconds delay)</option>
+                        <option value="vosk">Vosk (lightweight — less accurate, but very quick)</option>
+                        <option value="whisper-cpp">Whisper.cpp (alternative — similar to Faster Whisper)</option>
+                    </select>
+                </div>
+                <div class="callout">
+                    <p><strong>Faster Whisper</strong> gives the best results without internet. Words appear every few seconds in batches. It's already installed.</p>
+                    <p><strong>Vosk</strong> is lighter and faster — words appear almost as you speak — but it makes more mistakes and doesn't add punctuation.</p>
+                    <p><strong>Whisper.cpp</strong> is another good option, similar to Faster Whisper. Worth trying if one works better than the other for your voice.</p>
+                    <p class="muted">You can always come back and switch between these to see which you prefer.</p>
+                </div>
+            </div>
+
+            <div id="api-key-section" class="api-key-section">
+                <div class="field-group">
+                    <label>Which service would you like to use?</label>
+                    <select id="stt-provider" class="device-select" onchange="pickProvider(this.value)">
+                        <optgroup label="Words appear instantly as you speak">
+                            <option value="deepgram">Deepgram (recommended — $200 free credit)</option>
+                            <option value="assemblyai">AssemblyAI (100 hours free)</option>
+                            <option value="azure">Microsoft Azure (5 hours free/month)</option>
+                        </optgroup>
+                        <optgroup label="Words appear every few seconds in batches">
+                            <option value="groq">Groq (free, very fast)</option>
+                            <option value="interfaze">Interfaze (low cost)</option>
+                            <option value="openai">OpenAI Whisper</option>
+                            <option value="google">Google Cloud Speech</option>
+                        </optgroup>
+                    </select>
+                    <p class="help">The top group shows words as you speak them — great for live conversation. The bottom group is a few seconds behind but still works well.</p>
+                </div>
+
+                <!-- Deepgram -->
+                <div id="provider-deepgram" class="provider-instructions">
+                    <div class="callout">
+                        <h3>You'll need a free Deepgram account</h3>
+                        <p class="muted">Deepgram gives you $200 of free credit when you sign up — that lasts months of normal use.</p>
+                        <ol class="simple-steps">
+                            <li>Go to <a href="https://console.deepgram.com/signup" target="_blank" rel="noopener">deepgram.com/signup</a> and create a free account</li>
+                            <li>Once you're in, click <strong>API Keys</strong> on the left</li>
+                            <li>Click <strong>Create a New API Key</strong></li>
+                            <li>Copy the key and paste it below</li>
+                        </ol>
+                    </div>
+                    <div class="field-group">
+                        <label for="deepgram-key">Your Deepgram key</label>
+                        <input type="text" id="deepgram-key" placeholder="Paste your key here" autocomplete="off" spellcheck="false">
+                        <p class="help">It usually starts with "dg_" followed by a long string of letters and numbers.</p>
+                    </div>
+                </div>
+
+                <!-- AssemblyAI -->
+                <div id="provider-assemblyai" class="provider-instructions" style="display:none">
+                    <div class="callout">
+                        <h3>You'll need a free AssemblyAI account</h3>
+                        <p class="muted">AssemblyAI gives you 100 hours of free transcription when you sign up.</p>
+                        <ol class="simple-steps">
+                            <li>Go to <a href="https://www.assemblyai.com/dashboard/signup" target="_blank" rel="noopener">assemblyai.com/signup</a> and create a free account</li>
+                            <li>Your API key is shown right on the dashboard after you log in</li>
+                            <li>Copy it and paste it below</li>
+                        </ol>
+                    </div>
+                    <div class="field-group">
+                        <label for="assemblyai-key">Your AssemblyAI key</label>
+                        <input type="text" id="assemblyai-key" placeholder="Paste your key here" autocomplete="off" spellcheck="false">
+                    </div>
+                </div>
+
+                <!-- Azure -->
+                <div id="provider-azure" class="provider-instructions" style="display:none">
+                    <div class="callout">
+                        <h3>You'll need a free Microsoft Azure account</h3>
+                        <p class="muted">Azure gives you 5 hours of free speech-to-text every month.</p>
+                        <ol class="simple-steps">
+                            <li>Go to <a href="https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices" target="_blank" rel="noopener">Azure Portal — Create Speech Service</a></li>
+                            <li>Sign in (or create a free account first)</li>
+                            <li>Pick the <strong>Free (F0)</strong> pricing tier and create the resource</li>
+                            <li>Once created, go to <strong>Keys and Endpoint</strong> and copy <strong>Key 1</strong></li>
+                        </ol>
+                    </div>
+                    <div class="field-group">
+                        <label for="azure-key">Your Azure key</label>
+                        <input type="text" id="azure-key" placeholder="Paste your key here" autocomplete="off" spellcheck="false">
+                    </div>
+                    <div class="field-group">
+                        <label for="azure-region">Azure region</label>
+                        <p class="help">This was shown when you created the resource. Common ones: uksouth, eastus, westeurope.</p>
+                        <input type="text" id="azure-region" placeholder="e.g. uksouth" value="uksouth" autocomplete="off" spellcheck="false">
+                    </div>
+                </div>
+
+                <!-- Groq -->
+                <div id="provider-groq" class="provider-instructions" style="display:none">
+                    <div class="callout">
+                        <h3>You'll need a free Groq account</h3>
+                        <p class="muted">Groq is completely free. It uses the Whisper model but runs it on special hardware so it's very fast.</p>
+                        <ol class="simple-steps">
+                            <li>Go to <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a> and create a free account</li>
+                            <li>Click <strong>Create API Key</strong></li>
+                            <li>Copy the key and paste it below</li>
+                        </ol>
+                    </div>
+                    <div class="field-group">
+                        <label for="groq-key">Your Groq key</label>
+                        <input type="text" id="groq-key" placeholder="Paste your key here" autocomplete="off" spellcheck="false">
+                        <p class="help">It usually starts with "gsk_".</p>
+                    </div>
+                </div>
+
+                <!-- Interfaze -->
+                <div id="provider-interfaze" class="provider-instructions" style="display:none">
+                    <div class="callout">
+                        <h3>You'll need an Interfaze account</h3>
+                        <p class="muted">Interfaze uses specialised small models. Costs roughly $0.003–$0.009 per minute.</p>
+                        <ol class="simple-steps">
+                            <li>Go to <a href="https://interfaze.ai/" target="_blank" rel="noopener">interfaze.ai</a> and create an account</li>
+                            <li>Go to your dashboard and find your API key</li>
+                            <li>Copy it and paste it below</li>
+                        </ol>
+                    </div>
+                    <div class="field-group">
+                        <label for="interfaze-key">Your Interfaze key</label>
+                        <input type="text" id="interfaze-key" placeholder="Paste your key here" autocomplete="off" spellcheck="false">
+                    </div>
+                </div>
+
+                <!-- OpenAI Whisper -->
+                <div id="provider-openai" class="provider-instructions" style="display:none">
+                    <div class="callout">
+                        <h3>You'll need an OpenAI account</h3>
+                        <p class="muted">If you already use ChatGPT Plus, you may already have an API key. Whisper costs about $0.006 per minute.</p>
+                        <ol class="simple-steps">
+                            <li>Go to <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a></li>
+                            <li>Sign in and click <strong>Create new secret key</strong></li>
+                            <li>Copy the key and paste it below</li>
+                        </ol>
+                    </div>
+                    <div class="field-group">
+                        <label for="openai-key">Your OpenAI key</label>
+                        <input type="text" id="openai-key" placeholder="Paste your key here" autocomplete="off" spellcheck="false">
+                        <p class="help">It usually starts with "sk-".</p>
+                    </div>
+                </div>
+
+                <!-- Google Cloud -->
+                <div id="provider-google" class="provider-instructions" style="display:none">
+                    <div class="callout">
+                        <h3>You'll need a Google Cloud account</h3>
+                        <p class="muted">Google gives new accounts $300 of free credit. After that, the first 60 minutes each month are free.</p>
+                        <ol class="simple-steps">
+                            <li>Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console — Credentials</a></li>
+                            <li>Create a project if you don't have one, then enable the <strong>Cloud Speech-to-Text API</strong></li>
+                            <li>Click <strong>Create Credentials</strong> and choose <strong>API Key</strong></li>
+                            <li>Copy the key and paste it below</li>
+                        </ol>
+                    </div>
+                    <div class="field-group">
+                        <label for="google-key">Your Google Cloud API key</label>
+                        <input type="text" id="google-key" placeholder="Paste your key here" autocomplete="off" spellcheck="false">
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-buttons">
+                <button class="btn-back" onclick="goTo('step-microphones')">Back</button>
+                <button class="btn-primary" onclick="goToReview()">Next</button>
+            </div>
+        </div>
+
+        <!-- ─── Step 4: Network (optional, collapsed) ────────── -->
+        <div id="step-review" class="step">
+            <h1>Almost there!</h1>
+            <p>Here's what we'll set up:</p>
+
+            <div class="summary">
+                <div class="summary-row">
+                    <span class="summary-label">Room microphone</span>
+                    <span class="summary-value" id="summary-room">—</span>
+                </div>
+                <div class="summary-row">
+                    <span class="summary-label">Phone recorder</span>
+                    <span class="summary-value" id="summary-phone">—</span>
+                </div>
+                <div class="summary-row">
+                    <span class="summary-label">Speech-to-text</span>
+                    <span class="summary-value" id="summary-stt">—</span>
+                </div>
+            </div>
+
+            <details class="advanced-section">
+                <summary>Extra settings (you probably don't need these)</summary>
+                <div class="field-group">
+                    <label for="gateway-ip">Your router's address</label>
+                    <p class="help">The transcriber can automatically restart the WiFi if the internet drops. Leave blank to skip this, or enter your router's address (usually something like 192.168.1.1).</p>
+                    <input type="text" id="gateway-ip" placeholder="e.g. 192.168.1.1" autocomplete="off">
+                </div>
+            </details>
+
+            <div class="nav-buttons">
+                <button class="btn-back" onclick="goTo('step-speech')">Back</button>
+                <button class="btn-primary btn-go" id="btn-save" onclick="saveAndStart()">Start the transcriber!</button>
+            </div>
+        </div>
+
+        <!-- ─── Step 5: Done ────────────────────────────────────── -->
+        <div id="step-done" class="step">
+            <div class="done-icon">&#10003;</div>
+            <h1>You're all set!</h1>
+            <p class="big">Your transcriber is starting up now.</p>
+            <p>It should start showing captions on the screen within a few seconds. Try talking and see if the words appear!</p>
+
+            <div class="status-box" id="status-box">
+                <div class="status-row">
+                    <span>Transcriber</span>
+                    <span id="status-caption" class="status-badge loading">checking...</span>
+                </div>
+            </div>
+
+            <p class="muted">If something doesn't look right, click below to go through the setup again.</p>
+            <button class="btn-secondary" onclick="goTo('step-welcome')">Run setup again</button>
+        </div>
+
+    </div>
+
+    <script>
+        // ─── State ──────────────────────────────────────────────
+        let speechMode = 'online';
+        let devices = [];
+
+        // ─── Navigation ─────────────────────────────────────────
+        function goTo(stepId) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById(stepId).classList.add('active');
+            window.scrollTo(0, 0);
+
+            if (stepId === 'step-microphones') {
+                loadDevices();
+            }
+            if (stepId === 'step-done') {
+                checkStatus();
+            }
+        }
+
+        // ─── Device detection ───────────────────────────────────
+        function loadDevices() {
+            document.getElementById('devices-loading').style.display = 'block';
+            document.getElementById('devices-error').style.display = 'none';
+            document.getElementById('devices-list').style.display = 'none';
+
+            fetch('/api/devices')
+                .then(r => r.json())
+                .then(data => {
+                    devices = data;
+                    document.getElementById('devices-loading').style.display = 'none';
+
+                    if (devices.length === 0) {
+                        document.getElementById('devices-error').style.display = 'block';
+                        return;
+                    }
+
+                    const roomSel = document.getElementById('room-device');
+                    const phoneSel = document.getElementById('phone-device');
+
+                    // Clear existing options (except first)
+                    roomSel.innerHTML = '<option value="">-- Choose one --</option>';
+                    phoneSel.innerHTML = '<option value="">-- None / skip --</option>';
+
+                    devices.forEach(d => {
+                        roomSel.innerHTML += `<option value="${d.hw_id}">${d.label}</option>`;
+                        phoneSel.innerHTML += `<option value="${d.hw_id}">${d.label}</option>`;
+                    });
+
+                    // Auto-select if there's a saved config
+                    const config = {{ config | tojson }};
+                    if (config.room_device) roomSel.value = config.room_device;
+                    if (config.phone_device) phoneSel.value = config.phone_device;
+
+                    // Auto-select if only one device
+                    if (devices.length === 1) {
+                        roomSel.value = devices[0].hw_id;
+                    }
+
+                    document.getElementById('devices-list').style.display = 'block';
+                })
+                .catch(() => {
+                    document.getElementById('devices-loading').style.display = 'none';
+                    document.getElementById('devices-error').style.display = 'block';
+                });
+        }
+
+        // ─── Audio test ─────────────────────────────────────────
+        function testDevice(selectId) {
+            const sel = document.getElementById(selectId);
+            const resultDiv = document.getElementById(selectId + '-result');
+            const hwId = sel.value;
+
+            if (!hwId) {
+                resultDiv.textContent = 'Pick a microphone first.';
+                resultDiv.className = 'test-result warn';
+                return;
+            }
+
+            resultDiv.textContent = 'Listening for 3 seconds... try talking!';
+            resultDiv.className = 'test-result listening';
+
+            fetch('/api/test-audio', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({hw_id: hwId})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.level < 0) {
+                    resultDiv.textContent = "Couldn't read from this microphone. Try a different one.";
+                    resultDiv.className = 'test-result error';
+                } else if (data.level === 0) {
+                    resultDiv.textContent = "We didn't hear anything. Is the microphone on? Try again.";
+                    resultDiv.className = 'test-result warn';
+                } else if (data.level < 10) {
+                    resultDiv.textContent = "We heard a little bit. Try speaking louder or moving closer.";
+                    resultDiv.className = 'test-result warn';
+                } else {
+                    resultDiv.textContent = "Sounds great! We can hear you clearly.";
+                    resultDiv.className = 'test-result good';
+                }
+            })
+            .catch(() => {
+                resultDiv.textContent = 'Something went wrong. Try again.';
+                resultDiv.className = 'test-result error';
+            });
+        }
+
+        // ─── Speech mode ────────────────────────────────────────
+        function pickSpeechMode(mode) {
+            speechMode = mode;
+            document.getElementById('choice-online').querySelector('.choice-radio').className =
+                'choice-radio' + (mode === 'online' ? ' selected' : '');
+            document.getElementById('choice-offline').querySelector('.choice-radio').className =
+                'choice-radio' + (mode === 'offline' ? ' selected' : '');
+            document.getElementById('api-key-section').style.display =
+                mode === 'online' ? 'block' : 'none';
+            document.getElementById('offline-model-section').style.display =
+                mode === 'offline' ? 'block' : 'none';
+        }
+
+        // ─── Provider picker (switches instructions + key field) ─
+        const providers = ['deepgram', 'assemblyai', 'azure', 'groq', 'interfaze', 'openai', 'google'];
+        const providerNames = {
+            deepgram: 'Deepgram',
+            assemblyai: 'AssemblyAI',
+            azure: 'Microsoft Azure',
+            groq: 'Groq',
+            interfaze: 'Interfaze',
+            openai: 'OpenAI Whisper',
+            google: 'Google Cloud',
+        };
+        const offlineModelNames = {
+            'faster-whisper': 'Faster Whisper',
+            'vosk': 'Vosk',
+            'whisper-cpp': 'Whisper.cpp',
+        };
+
+        function pickProvider(provider) {
+            providers.forEach(p => {
+                const el = document.getElementById('provider-' + p);
+                if (el) el.style.display = p === provider ? 'block' : 'none';
+            });
+        }
+
+        function getSelectedProvider() {
+            return document.getElementById('stt-provider').value;
+        }
+
+        function getProviderKey() {
+            const provider = getSelectedProvider();
+            const keyFields = {
+                deepgram: 'deepgram-key',
+                assemblyai: 'assemblyai-key',
+                azure: 'azure-key',
+                groq: 'groq-key',
+                interfaze: 'interfaze-key',
+                openai: 'openai-key',
+                google: 'google-key',
+            };
+            const field = document.getElementById(keyFields[provider]);
+            return field ? field.value.trim() : '';
+        }
+
+        // ─── Review step ────────────────────────────────────────
+        function goToReview() {
+            const roomSel = document.getElementById('room-device');
+            const phoneSel = document.getElementById('phone-device');
+
+            const roomText = roomSel.options[roomSel.selectedIndex]?.text || '—';
+            const phoneText = phoneSel.options[phoneSel.selectedIndex]?.text || '— None / skip —';
+
+            document.getElementById('summary-room').textContent =
+                roomSel.value ? roomText : 'Auto-detect';
+            document.getElementById('summary-phone').textContent =
+                phoneSel.value ? phoneText : 'None';
+
+            if (speechMode === 'online') {
+                const provider = getSelectedProvider();
+                document.getElementById('summary-stt').textContent = providerNames[provider] || provider;
+            } else {
+                const model = document.getElementById('offline-model').value;
+                document.getElementById('summary-stt').textContent =
+                    'Offline — ' + (offlineModelNames[model] || model);
+            }
+
+            goTo('step-review');
+        }
+
+        // ─── Save and start ─────────────────────────────────────
+        function saveAndStart() {
+            const btn = document.getElementById('btn-save');
+            btn.textContent = 'Saving...';
+            btn.disabled = true;
+
+            const offlineModel = document.getElementById('offline-model').value;
+            const provider = speechMode === 'online' ? getSelectedProvider() : offlineModel;
+            const apiKey = speechMode === 'online' ? getProviderKey() : '';
+
+            const payload = {
+                room_device: document.getElementById('room-device').value,
+                phone_device: document.getElementById('phone-device').value,
+                stt_provider: provider,
+                offline_model: offlineModel,
+                deepgram_key: provider === 'deepgram' ? apiKey : '',
+                assemblyai_key: provider === 'assemblyai' ? apiKey : '',
+                azure_key: provider === 'azure' ? apiKey : '',
+                azure_region: provider === 'azure' ? document.getElementById('azure-region').value.trim() : '',
+                groq_key: provider === 'groq' ? apiKey : '',
+                interfaze_key: provider === 'interfaze' ? apiKey : '',
+                openai_key: provider === 'openai' ? apiKey : '',
+                google_key: provider === 'google' ? apiKey : '',
+                gateway_ip: document.getElementById('gateway-ip').value.trim(),
+            };
+
+            fetch('/api/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.ok) {
+                    goTo('step-done');
+                } else {
+                    btn.textContent = 'Start the transcriber!';
+                    btn.disabled = false;
+                    alert('Something went wrong saving. Please try again.');
+                }
+            })
+            .catch(() => {
+                btn.textContent = 'Start the transcriber!';
+                btn.disabled = false;
+                alert('Could not connect. Is the Raspberry Pi still on?');
+            });
+        }
+
+        // ─── Status check ───────────────────────────────────────
+        function checkStatus() {
+            fetch('/api/status')
+                .then(r => r.json())
+                .then(data => {
+                    const badge = document.getElementById('status-caption');
+                    if (data.caption === 'active') {
+                        badge.textContent = 'Running';
+                        badge.className = 'status-badge running';
+                    } else if (data.caption === 'activating') {
+                        badge.textContent = 'Starting up...';
+                        badge.className = 'status-badge loading';
+                        setTimeout(checkStatus, 3000);
+                    } else {
+                        badge.textContent = 'Not running yet';
+                        badge.className = 'status-badge stopped';
+                        setTimeout(checkStatus, 3000);
+                    }
+                })
+                .catch(() => {
+                    // Ignore — page might have been refreshed
+                });
+        }
+
+        // ─── Load saved config into fields ───────────────────────
+        (function() {
+            const config = {{ config | tojson }};
+
+            // Restore API keys
+            const keyMap = {
+                deepgram_key: 'deepgram-key',
+                assemblyai_key: 'assemblyai-key',
+                azure_key: 'azure-key',
+                groq_key: 'groq-key',
+                interfaze_key: 'interfaze-key',
+                openai_key: 'openai-key',
+                google_key: 'google-key',
+            };
+            for (const [configKey, fieldId] of Object.entries(keyMap)) {
+                if (config[configKey]) {
+                    const el = document.getElementById(fieldId);
+                    if (el) el.value = config[configKey];
+                }
+            }
+            if (config.azure_region) {
+                document.getElementById('azure-region').value = config.azure_region;
+            }
+
+            // Restore provider selection
+            if (config.stt_provider && config.stt_provider !== 'vosk') {
+                const sel = document.getElementById('stt-provider');
+                if (sel) {
+                    sel.value = config.stt_provider;
+                    pickProvider(config.stt_provider);
+                }
+            }
+
+            // Restore offline model selection
+            if (config.offline_model) {
+                const offlineSel = document.getElementById('offline-model');
+                if (offlineSel) offlineSel.value = config.offline_model;
+            }
+
+            // Restore speech mode (offline providers stored as model name)
+            const offlineModels = ['faster-whisper', 'vosk', 'whisper-cpp'];
+            if (offlineModels.includes(config.stt_provider)) {
+                pickSpeechMode('offline');
+            }
+
+            if (config.gateway_ip) {
+                document.getElementById('gateway-ip').value = config.gateway_ip;
+            }
+        })();
+    </script>
+</body>
+</html>

@@ -7,12 +7,25 @@ import threading
 import re
 import time
 import queue
+import json
 from datetime import datetime
 
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QLabel,
     QVBoxLayout, QHBoxLayout, QWidget, QScroller, QStackedWidget)
 from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
 from PyQt6.QtGui import QFont, QFontDatabase, QTextCursor, QPainter, QColor, QLinearGradient, QPen
+
+# Load config from setup wizard, or use defaults
+CONFIG_PATH = os.path.expanduser('~/gramps-transcriber/config.json')
+
+def load_config():
+    try:
+        with open(CONFIG_PATH) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+CONFIG = load_config()
 
 # Paths
 VOSK_MODEL = os.path.expanduser('~/vosk-uk')
@@ -22,11 +35,11 @@ SILENCE_TIMEOUT = 90
 PHONE_SILENCE_TIMEOUT = 10
 MODE_FILE = '/tmp/gramps_mode'
 
-# Try to load secrets
+# Try to load secrets — check credentials.py first, then config.json
 try:
     from credentials import DEEPGRAM_KEY
 except ImportError:
-    DEEPGRAM_KEY = None
+    DEEPGRAM_KEY = CONFIG.get('deepgram_key')
 
 # Thread-safe state management
 class TranscriptionState:
@@ -178,10 +191,14 @@ def find_audio_device(name_pattern):
 def get_audio_device():
     """Get appropriate audio device based on current state"""
     if state.use_phone_audio:
-        # Phone recorder - try to find it, fallback to hw:0,0
+        configured = CONFIG.get('phone_device')
+        if configured:
+            return configured
         dev = find_audio_device('0x4d9') or find_audio_device('2832') or find_audio_device('phone') or 'hw:0,0'
     else:
-        # Room mic - try TONOR or similar, fallback to hw:1,0
+        configured = CONFIG.get('room_device')
+        if configured:
+            return configured
         dev = find_audio_device('tonor') or find_audio_device('usb') or 'hw:1,0'
     return dev
 
@@ -657,6 +674,439 @@ def deepgram_thread():
             emitter.thread_died.emit('online')
 
 
+def assemblyai_thread():
+    """Run AssemblyAI real-time streaming via WebSocket"""
+    api_key = CONFIG.get('assemblyai_key')
+    if not api_key:
+        print('No AssemblyAI API key', flush=True)
+        emitter.status_changed.emit('no-key')
+        emitter.thread_died.emit('online')
+        return
+
+    print('Starting AssemblyAI...', flush=True)
+    emitter.status_changed.emit('assemblyai')
+    state.thread_alive = True
+    arecord = None
+
+    try:
+        import websocket
+        import json
+        import base64
+
+        audio_device = get_audio_device()
+        sample_rate = 8000 if state.use_phone_audio else 16000
+        print(f"Using audio device: {audio_device} @ {sample_rate}Hz", flush=True)
+
+        # Start arecord with retry
+        for attempt in range(4):
+            arecord = subprocess.Popen(
+                ['arecord', '-D', audio_device, '-f', 'S16_LE', '-r', str(sample_rate), '-c', '1', '-t', 'raw'],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            state.set_proc(arecord)
+            time.sleep(0.3)
+            test_data = arecord.stdout.read(3200)
+            if len(test_data) > 0:
+                print(f'arecord ready (attempt {attempt+1})', flush=True)
+                break
+            else:
+                arecord.terminate()
+                arecord = None
+                if attempt < 3:
+                    time.sleep(1)
+
+        if not arecord:
+            raise RuntimeError('Could not start arecord after 4 attempts')
+
+        url = f'wss://api.assemblyai.com/v2/realtime/ws?sample_rate={sample_rate}'
+        ws_error = threading.Event()
+
+        def on_message(ws, message):
+            try:
+                data = json.loads(message)
+                if data.get('message_type') == 'FinalTranscript':
+                    text = data.get('text', '').strip()
+                    if text:
+                        print(f'>>> {text}', flush=True)
+                        state.last_text_time = time.time()
+                        emitter.new_text.emit(text + '\n')
+                elif data.get('message_type') == 'PartialTranscript':
+                    text = data.get('text', '').strip()
+                    if text:
+                        state.last_text_time = time.time()
+            except Exception as e:
+                print(f'AssemblyAI parse error: {e}', flush=True)
+
+        def on_error(ws, error):
+            print(f'AssemblyAI WS error: {error}', flush=True)
+            ws_error.set()
+
+        def on_open(ws):
+            print('AssemblyAI connected', flush=True)
+            emitter.mode_ready.emit('online')
+            state.reset_restart_count()
+
+            # Send initial audio
+            ws.send(json.dumps({'audio_data': base64.b64encode(test_data).decode()}))
+
+            def send_audio():
+                while not state.is_stopped() and not ws_error.is_set():
+                    try:
+                        chunk = arecord.stdout.read(3200)
+                        if chunk:
+                            ws.send(json.dumps({'audio_data': base64.b64encode(chunk).decode()}))
+                        else:
+                            time.sleep(0.01)
+                    except Exception as e:
+                        print(f"AssemblyAI send error: {e}", flush=True)
+                        break
+                try:
+                    ws.send(json.dumps({'terminate_session': True}))
+                    ws.close()
+                except:
+                    pass
+
+            threading.Thread(target=send_audio, daemon=True).start()
+
+        def on_close(ws, code, msg):
+            print(f'AssemblyAI closed: {code} {msg}', flush=True)
+
+        print('Connecting to AssemblyAI...', flush=True)
+        ws = websocket.WebSocketApp(
+            url,
+            header={'Authorization': api_key},
+            on_open=on_open,
+            on_message=on_message,
+            on_error=on_error,
+            on_close=on_close,
+        )
+        ws.run_forever(ping_interval=30, ping_timeout=10)
+
+    except Exception as e:
+        print(f'AssemblyAI error: {e}', flush=True)
+        emitter.status_changed.emit('error')
+        import traceback
+        traceback.print_exc()
+    finally:
+        state.thread_alive = False
+        if arecord:
+            try:
+                arecord.terminate()
+                arecord.wait(timeout=2)
+            except:
+                try:
+                    arecord.kill()
+                except:
+                    pass
+        state.kill_proc()
+        print('AssemblyAI stopped', flush=True)
+        if not state.is_stopped():
+            emitter.thread_died.emit('online')
+
+
+def azure_thread():
+    """Run Azure Speech Services with SDK streaming"""
+    api_key = CONFIG.get('azure_key')
+    region = CONFIG.get('azure_region', 'uksouth')
+    if not api_key:
+        print('No Azure API key', flush=True)
+        emitter.status_changed.emit('no-key')
+        emitter.thread_died.emit('online')
+        return
+
+    print('Starting Azure Speech...', flush=True)
+    emitter.status_changed.emit('azure')
+    state.thread_alive = True
+
+    try:
+        import azure.cognitiveservices.speech as speechsdk
+
+        speech_config = speechsdk.SpeechConfig(subscription=api_key, region=region)
+        speech_config.speech_recognition_language = 'en-GB'
+
+        audio_device = get_audio_device()
+        # Azure SDK can use ALSA device directly
+        audio_config = speechsdk.audio.AudioConfig(device_name=audio_device)
+
+        recognizer = speechsdk.SpeechRecognizer(
+            speech_config=speech_config,
+            audio_config=audio_config,
+        )
+
+        def on_recognized(evt):
+            text = evt.result.text.strip()
+            if text:
+                print(f'>>> {text}', flush=True)
+                state.last_text_time = time.time()
+                emitter.new_text.emit(text + '\n')
+
+        def on_recognizing(evt):
+            if evt.result.text.strip():
+                state.last_text_time = time.time()
+
+        def on_canceled(evt):
+            print(f'Azure canceled: {evt.result.cancellation_details.reason}', flush=True)
+            if evt.result.cancellation_details.error_details:
+                print(f'Azure error: {evt.result.cancellation_details.error_details}', flush=True)
+
+        def on_session_started(evt):
+            print('Azure session started', flush=True)
+            emitter.mode_ready.emit('online')
+            state.reset_restart_count()
+
+        recognizer.recognized.connect(on_recognized)
+        recognizer.recognizing.connect(on_recognizing)
+        recognizer.canceled.connect(on_canceled)
+        recognizer.session_started.connect(on_session_started)
+
+        print('Starting continuous recognition...', flush=True)
+        recognizer.start_continuous_recognition()
+
+        # Wait until stopped
+        while not state.is_stopped():
+            time.sleep(0.5)
+
+        recognizer.stop_continuous_recognition()
+
+    except ImportError:
+        print('Azure Speech SDK not installed. Install with: pip install azure-cognitiveservices-speech', flush=True)
+        emitter.status_changed.emit('error')
+    except Exception as e:
+        print(f'Azure error: {e}', flush=True)
+        emitter.status_changed.emit('error')
+        import traceback
+        traceback.print_exc()
+    finally:
+        state.thread_alive = False
+        state.kill_proc()
+        print('Azure stopped', flush=True)
+        if not state.is_stopped():
+            emitter.thread_died.emit('online')
+
+
+def _chunked_api_thread(provider_name, transcribe_fn):
+    """Shared logic for providers that use chunked batch transcription (Google, OpenAI, Groq).
+
+    Records audio in chunks and sends each chunk to transcribe_fn(audio_bytes, sample_rate)
+    which should return the transcribed text or empty string.
+    """
+    print(f'Starting {provider_name}...', flush=True)
+    emitter.status_changed.emit(provider_name.lower())
+    state.thread_alive = True
+    arecord = None
+
+    try:
+        audio_device = get_audio_device()
+        sample_rate = 8000 if state.use_phone_audio else 16000
+        chunk_seconds = 4
+        chunk_bytes = sample_rate * 2 * chunk_seconds  # 16-bit mono
+        print(f"Using audio device: {audio_device} @ {sample_rate}Hz", flush=True)
+
+        # Start arecord with retry
+        for attempt in range(4):
+            arecord = subprocess.Popen(
+                ['arecord', '-D', audio_device, '-f', 'S16_LE', '-r', str(sample_rate), '-c', '1', '-t', 'raw'],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            state.set_proc(arecord)
+            time.sleep(0.3)
+            if arecord.poll() is None:
+                print(f'arecord ready (attempt {attempt+1})', flush=True)
+                break
+            else:
+                arecord = None
+                if attempt < 3:
+                    time.sleep(1)
+
+        if not arecord:
+            raise RuntimeError('Could not start arecord after 4 attempts')
+
+        emitter.mode_ready.emit('online')
+        state.reset_restart_count()
+
+        buffer = b''
+        while not state.is_stopped():
+            data = arecord.stdout.read(3200)
+            if not data:
+                time.sleep(0.01)
+                continue
+
+            buffer += data
+
+            if len(buffer) >= chunk_bytes:
+                audio_chunk = buffer[:chunk_bytes]
+                buffer = buffer[chunk_bytes:]
+
+                try:
+                    text = transcribe_fn(audio_chunk, sample_rate)
+                    if text and text.strip():
+                        text = text.strip()
+                        print(f'>>> {text}', flush=True)
+                        state.last_text_time = time.time()
+                        emitter.new_text.emit(text + '\n')
+                except Exception as e:
+                    print(f'{provider_name} API error: {e}', flush=True)
+
+    except Exception as e:
+        print(f'{provider_name} error: {e}', flush=True)
+        emitter.status_changed.emit('error')
+        import traceback
+        traceback.print_exc()
+    finally:
+        state.thread_alive = False
+        if arecord:
+            try:
+                arecord.terminate()
+                arecord.wait(timeout=2)
+            except:
+                try:
+                    arecord.kill()
+                except:
+                    pass
+        state.kill_proc()
+        print(f'{provider_name} stopped', flush=True)
+        if not state.is_stopped():
+            emitter.thread_died.emit('online')
+
+
+def _make_wav(raw_audio, sample_rate):
+    """Wrap raw PCM bytes in a minimal WAV header."""
+    import struct as st
+    num_samples = len(raw_audio) // 2
+    wav = bytearray()
+    wav += b'RIFF'
+    wav += st.pack('<I', 36 + len(raw_audio))
+    wav += b'WAVE'
+    wav += b'fmt '
+    wav += st.pack('<I', 16)           # chunk size
+    wav += st.pack('<H', 1)            # PCM format
+    wav += st.pack('<H', 1)            # mono
+    wav += st.pack('<I', sample_rate)
+    wav += st.pack('<I', sample_rate * 2)  # byte rate
+    wav += st.pack('<H', 2)            # block align
+    wav += st.pack('<H', 16)           # bits per sample
+    wav += b'data'
+    wav += st.pack('<I', len(raw_audio))
+    wav += raw_audio
+    return bytes(wav)
+
+
+def google_thread():
+    """Google Cloud Speech-to-Text via REST API (chunked)"""
+    api_key = CONFIG.get('google_key')
+    if not api_key:
+        print('No Google Cloud API key', flush=True)
+        emitter.status_changed.emit('no-key')
+        emitter.thread_died.emit('online')
+        return
+
+    import requests
+    import base64
+
+    def transcribe(audio_bytes, sample_rate):
+        audio_b64 = base64.b64encode(audio_bytes).decode()
+        resp = requests.post(
+            f'https://speech.googleapis.com/v1/speech:recognize?key={api_key}',
+            json={
+                'config': {
+                    'encoding': 'LINEAR16',
+                    'sampleRateHertz': sample_rate,
+                    'languageCode': 'en-GB',
+                    'enableAutomaticPunctuation': True,
+                },
+                'audio': {'content': audio_b64},
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        results = resp.json().get('results', [])
+        return ' '.join(
+            r['alternatives'][0]['transcript']
+            for r in results
+            if r.get('alternatives')
+        )
+
+    _chunked_api_thread('Google', transcribe)
+
+
+def openai_thread():
+    """OpenAI Whisper API (chunked)"""
+    api_key = CONFIG.get('openai_key')
+    if not api_key:
+        print('No OpenAI API key', flush=True)
+        emitter.status_changed.emit('no-key')
+        emitter.thread_died.emit('online')
+        return
+
+    import requests
+
+    def transcribe(audio_bytes, sample_rate):
+        wav_data = _make_wav(audio_bytes, sample_rate)
+        resp = requests.post(
+            'https://api.openai.com/v1/audio/transcriptions',
+            headers={'Authorization': f'Bearer {api_key}'},
+            files={'file': ('chunk.wav', wav_data, 'audio/wav')},
+            data={'model': 'whisper-1', 'language': 'en'},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json().get('text', '')
+
+    _chunked_api_thread('OpenAI', transcribe)
+
+
+def groq_thread():
+    """Groq Whisper API (chunked) — free tier, very fast"""
+    api_key = CONFIG.get('groq_key')
+    if not api_key:
+        print('No Groq API key', flush=True)
+        emitter.status_changed.emit('no-key')
+        emitter.thread_died.emit('online')
+        return
+
+    import requests
+
+    def transcribe(audio_bytes, sample_rate):
+        wav_data = _make_wav(audio_bytes, sample_rate)
+        resp = requests.post(
+            'https://api.groq.com/openai/v1/audio/transcriptions',
+            headers={'Authorization': f'Bearer {api_key}'},
+            files={'file': ('chunk.wav', wav_data, 'audio/wav')},
+            data={'model': 'whisper-large-v3', 'language': 'en'},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json().get('text', '')
+
+    _chunked_api_thread('Groq', transcribe)
+
+
+def interfaze_thread():
+    """Interfaze STT API (chunked, OpenAI-compatible)"""
+    api_key = CONFIG.get('interfaze_key')
+    if not api_key:
+        print('No Interfaze API key', flush=True)
+        emitter.status_changed.emit('no-key')
+        emitter.thread_died.emit('online')
+        return
+
+    import requests
+
+    def transcribe(audio_bytes, sample_rate):
+        wav_data = _make_wav(audio_bytes, sample_rate)
+        resp = requests.post(
+            'https://api.interfaze.ai/v1/audio/transcriptions',
+            headers={'Authorization': f'Bearer {api_key}'},
+            files={'file': ('chunk.wav', wav_data, 'audio/wav')},
+            data={'model': 'interfaze-beta', 'language': 'en'},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json().get('text', '')
+
+    _chunked_api_thread('Interfaze', transcribe)
+
+
 def start_transcription(mode):
     """Start transcription with cleanup"""
     cleanup_audio_processes()
@@ -666,9 +1116,29 @@ def start_transcription(mode):
     state.mode = mode
 
     if mode == 'online':
-        threading.Thread(target=deepgram_thread, daemon=True).start()
+        provider = CONFIG.get('stt_provider', 'deepgram')
+        provider_threads = {
+            'deepgram': deepgram_thread,
+            'assemblyai': assemblyai_thread,
+            'azure': azure_thread,
+            'groq': groq_thread,
+            'interfaze': interfaze_thread,
+            'openai': openai_thread,
+            'google': google_thread,
+        }
+        target = provider_threads.get(provider, deepgram_thread)
+        print(f'Starting online transcription with {provider}', flush=True)
+        threading.Thread(target=target, daemon=True).start()
     else:
-        threading.Thread(target=faster_whisper_thread, daemon=True).start()
+        offline_model = CONFIG.get('offline_model', 'faster-whisper')
+        offline_threads = {
+            'faster-whisper': faster_whisper_thread,
+            'vosk': vosk_thread,
+            'whisper-cpp': whisper_thread,
+        }
+        target = offline_threads.get(offline_model, faster_whisper_thread)
+        print(f'Starting offline transcription with {offline_model}', flush=True)
+        threading.Thread(target=target, daemon=True).start()
 
 
 def stop_transcription():

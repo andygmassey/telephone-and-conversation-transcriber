@@ -1,7 +1,8 @@
-# Credentials - NEVER commit
+# Credentials and user config - NEVER commit
 .env
 secrets.py
 credentials.py
+config.json
 *.key
 
 # Python
