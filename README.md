@@ -4,6 +4,8 @@ My elderly father is extremely deaf and struggles to hear people, particularly o
 
 This branch uses **Azure Speech Services** (en-GB) with automatic **Vosk** offline fallback. See the `main` branch for the Deepgram/faster-whisper version.
 
+![The transcriber in action — live captions on a 10" touchscreen while Dad's on the phone](photo.jpg)
+
 ## Features
 
 - **Live Captions** - Real-time speech-to-text using Azure Speech (en-GB)
