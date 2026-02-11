@@ -19,6 +19,7 @@ VENV_DIR="$HOME/gramps-env"
 VOSK_DIR="$HOME/vosk-uk"
 SYSTEMD_DIR="$HOME/.config/systemd/user"
 REPO_URL="https://github.com/andygmassey/telephone-and-conversation-transcriber.git"
+BRANCH="${GRAMPS_BRANCH:-main}"
 VOSK_MODEL_URL="https://alphacephei.com/vosk/models/vosk-model-small-en-gb-0.15.zip"
 
 step() {
@@ -111,7 +112,7 @@ if [ -d "$INSTALL_DIR" ]; then
     git pull --quiet || warn "Couldn't update. Using existing version."
     cd - > /dev/null
 else
-    git clone --quiet "$REPO_URL" "$INSTALL_DIR" || fail "Couldn't download the transcriber. Check your internet connection."
+    git clone --quiet --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR" || fail "Couldn't download the transcriber. Check your internet connection."
 fi
 
 ok "Transcriber downloaded to $INSTALL_DIR"
