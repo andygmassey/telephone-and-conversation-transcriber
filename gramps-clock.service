@@ -1,0 +1,15 @@
+[Unit]
+Description=Gramps Flip Clock
+After=graphical-session.target
+
+[Service]
+Type=notify
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+ExecStart=%h/gramps-env/bin/python %h/gramps-transcriber/clock_v2.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

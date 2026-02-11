@@ -1,24 +1,30 @@
 #!/usr/bin/env python3
-"""Phone detector - detects phone activity, releases device for transcription"""
+"""Auto-mute room mic when phone is active - releases device for caption_app"""
 import subprocess
 import time
+import sys
 import os
-import numpy as np
-import threading
 
 PHONE_CARD = 0
+ROOM_CARD = 1
 STATUS_FILE = "/tmp/phone_muted"
-ENERGY_THRESHOLD = 0.003
-ACTIVE_SECONDS = 1
+ENERGY_THRESHOLD = 0.01
+ACTIVE_SECONDS = 2
+SILENT_SECONDS = 5
 
 def card_exists(card_num):
+    """Check if an audio card exists"""
     result = subprocess.run(["arecord", "-l"], capture_output=True, text=True)
     return f"card {card_num}:" in result.stdout
 
-def write_status(active):
+def set_room_mic(level):
+    subprocess.run(["amixer", "-c", str(ROOM_CARD), "set", "Mic", level],
+                   capture_output=True)
+
+def write_status(muted):
     try:
         with open(STATUS_FILE, "w") as f:
-            f.write("1" if active else "0")
+            f.write("1" if muted else "0")
     except:
         pass
 
@@ -29,19 +35,32 @@ def read_status():
     except:
         return False
 
-# Watchdog notifier
-def watchdog_thread():
-    try:
-        import systemd.daemon
-        while True:
-            systemd.daemon.notify("WATCHDOG=1")
-            time.sleep(20)
-    except:
-        pass
+def cleanup():
+    """Ensure mic is unmuted on exit"""
+    print("Cleaning up - unmuting room mic", flush=True)
+    set_room_mic("100%")
+    write_status(False)
 
 def main():
-    # Start watchdog thread
-    threading.Thread(target=watchdog_thread, daemon=True).start()
+    # Check if phone recorder exists
+    if not card_exists(PHONE_CARD):
+        print(f"Phone recorder (card {PHONE_CARD}) not found - exiting gracefully", flush=True)
+        write_status(False)
+        try:
+            import systemd.daemon
+            systemd.daemon.notify("READY=1")
+        except:
+            pass
+        while True:
+            time.sleep(3600)
+
+    # Check if room mic exists
+    if not card_exists(ROOM_CARD):
+        print(f"Room mic (card {ROOM_CARD}) not found - exiting gracefully", flush=True)
+        while True:
+            time.sleep(3600)
+
+    print(f"Monitoring phone (card {PHONE_CARD}), controlling room mic (card {ROOM_CARD})", flush=True)
 
     try:
         import systemd.daemon
@@ -49,60 +68,66 @@ def main():
     except:
         pass
 
+    import atexit
+    atexit.register(cleanup)
+
+    import signal
+    signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
+    signal.signal(signal.SIGINT, lambda s, f: sys.exit(0))
+
     import sounddevice as sd
+    import numpy as np
 
     while True:
-        # Check if phone device exists
-        if not card_exists(PHONE_CARD):
-            print(f"Phone recorder (card {PHONE_CARD}) not found, waiting...", flush=True)
-            write_status(False)
-            time.sleep(10)
-            continue
-
         # Phase 1: Monitor for phone activity
-        print("Waiting for phone activity...", flush=True)
-        write_status(False)
+        muted = False
         active_count = 0
-        phone_detected = False
+        silent_count = 0
+        phone_active = False
 
-        def detect_callback(indata, frames, time_info, status):
-            nonlocal active_count, phone_detected
+        def callback(indata, frames, time_info, status):
+            nonlocal muted, active_count, silent_count, phone_active
+
             energy = np.sqrt(np.mean(indata**2))
+
             if energy > ENERGY_THRESHOLD:
                 active_count += 1
-                if active_count >= ACTIVE_SECONDS * 10:
-                    phone_detected = True
+                silent_count = 0
+                if not muted and active_count >= ACTIVE_SECONDS * 10:
+                    print("Phone active - muting room mic, releasing device for captions", flush=True)
+                    set_room_mic("0%")
+                    write_status(True)
+                    muted = True
+                    phone_active = True
             else:
-                active_count = max(0, active_count - 1)
+                silent_count += 1
+                active_count = 0
 
         try:
+            print("Starting phone monitor...", flush=True)
             with sd.InputStream(device=PHONE_CARD, channels=1, samplerate=8000,
-                               blocksize=800, callback=detect_callback):
-                while not phone_detected:
+                               blocksize=800, callback=callback):
+                while not phone_active:
                     time.sleep(0.1)
+
+            # Phone became active - stream is now closed, device released
+            print("Device released - waiting for call to end...", flush=True)
+
+            # Phase 2: Wait for caption_app to signal call ended
+            # (caption_app will write 0 to status file when it detects silence)
+            while read_status():
+                time.sleep(1)
+
+            # Call ended - unmute room mic
+            print("Call ended - unmuting room mic, resuming monitor", flush=True)
+            set_room_mic("100%")
+            time.sleep(2)  # Brief pause before resuming
+
         except Exception as e:
-            print(f"Detection error: {e}", flush=True)
-            time.sleep(2)
-            continue
+            print(f"Error monitoring phone: {e}", flush=True)
+            cleanup()
+            time.sleep(5)
 
-        # Phase 2: Phone active - device is now released
-        print("Phone ACTIVE - device released, waiting for ALSA...", flush=True)
-        time.sleep(0.5)
-
-        # Signal caption_app
-        print("Signaling caption_app...", flush=True)
-        write_status(True)
-
-        # Phase 3: Wait for call to end
-        wait_start = time.time()
-        while read_status():
-            time.sleep(1)
-            if time.time() - wait_start > 300:
-                print("Timeout waiting for call end, resetting", flush=True)
-                break
-
-        print("Phone ENDED - resuming monitor", flush=True)
-        time.sleep(2)
 
 if __name__ == "__main__":
     main()

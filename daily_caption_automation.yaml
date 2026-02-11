@@ -1,0 +1,33 @@
+# Gramps Daily Caption Usage Alarm
+# Copy this to your Home Assistant automations.yaml or create via HA UI
+#
+# Prerequisites:
+# 1. Set up notify.gramps_email in configuration.yaml
+# 2. Ensure sensor.caption_energy exists (created by caption service)
+
+automation:
+  - alias: "Gramps Daily Caption Minutes"
+    description: "Send daily usage report at midnight"
+    trigger:
+      - platform: time
+        at: "23:59:59"
+    condition: []
+    action:
+      - service: notify.gramps_email
+        data:
+          title: "Gramps Daily Usage Report"
+          message: >
+            Gramps transcriber used {{ (states('sensor.caption_energy')|float * 1440 / 60) | round(1) }} hours today.
+            Azure free tier (5 hours/month) resets at 00:00 GMT.
+    mode: single
+
+# Example notify configuration for configuration.yaml:
+# notify:
+#   - name: gramps_email
+#     platform: smtp
+#     server: smtp.gmail.com
+#     port: 587
+#     sender: your-email@gmail.com
+#     recipient: recipient@example.com
+#     username: your-email@gmail.com
+#     password: !secret gmail_app_password

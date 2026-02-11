@@ -1,41 +1,43 @@
-# Telephone and Conversation Transcriber
+# Telephone and Conversation Transcriber (Azure Branch)
 
 Real-time speech-to-text caption appliance for a deaf or hard-of-hearing user. Converts speech from phone calls and room conversation into live text on a touchscreen display.
 
+This branch uses **Azure Speech Services** (en-GB) with automatic **Vosk** offline fallback.
+
 ## Features
 
-- **Live Captions** - Real-time speech-to-text displayed on a touchscreen
-- **Dual Audio Sources** - Transcribes both landline phone calls and in-room conversation
-- **Online/Offline Modes** - Deepgram (cloud, high accuracy) with automatic Vosk/Whisper fallback (offline)
-- **Flip-Clock Display** - Split-flap style clock when idle, auto-dims at night
-- **Touch Controls** - Font size (S/M/L), colour schemes, drag-to-scroll history
-- **Auto Phone Detection** - Automatically switches to phone audio when a call begins
-- **Bulletproof Reliability** - Watchdog timers, auto-restart, health monitoring
+- **Live Captions** - Real-time speech-to-text using Azure Speech (en-GB)
+- **Offline Fallback** - Automatic fallback to Vosk if Azure is unavailable
+- **Flip-Clock** - Split-flap style clock displays when idle, auto-dims at night
+- **Auto-Mute** - Room mic automatically mutes when phone is in use
+- **Touch Scroll** - Drag anywhere on captions to scroll through history
+- **Bulletproof** - Works with or without phone recorder, with or without internet
 
 ## Hardware
 
-| Component | Model | Purpose |
-|-----------|-------|---------|
-| Computer | Raspberry Pi 5 (8GB) | Main processor |
-| Phone Recorder | Fi3001A USB (04d9:2832) | Captures landline calls via RJ-11 |
-| Room Microphone | TONOR G11 (0d8c:0134) | Captures in-room conversation |
-| Display | 10" Touchscreen (1280x800) | Shows live captions |
+| Component | Model | Required |
+|-----------|-------|----------|
+| Computer | Raspberry Pi 5 (8GB) | Yes |
+| Room Microphone | TONOR G11 (0d8c:0134) | Yes |
+| Display | 10" Touchscreen (1280x800) | Yes |
+| Phone Recorder | Fi3001A (04d9:2832) | Optional |
 
-## Software Stack
+### TONOR G11 Microphone
 
-Two speech recognition configurations available on separate branches:
+**IMPORTANT**: The mic has a mute button with an LED indicator.
+- **LED ON** = Microphone ACTIVE (working)
+- **LED OFF** = Microphone MUTED (no audio)
 
-| Branch | Engine | Accuracy | Latency | Offline |
-|--------|--------|----------|---------|---------|
-| **main** | Deepgram / faster-whisper / Vosk | ~90-95% / ~85% / ~75% | ~200ms / ~3s / ~300ms | No / Yes / Yes |
-| **azure-test** | Azure Speech / Vosk | ~90-95% / ~75% | ~200ms / ~300ms | No / Yes |
+If captions stop appearing, check the LED is lit. Press the button on the mic to toggle.
 
-### Dependencies
+## Speech Recognition
 
-- Python 3.13
-- PyQt6 (fullscreen display with touch scroll)
-- Deepgram / Azure Cognitive Services Speech SDK / Vosk / faster-whisper
-- systemd user services with watchdog
+| Mode | Indicator | Accuracy | Latency | Requires |
+|------|-----------|----------|---------|----------|
+| Azure | Cloud icon (blue) | ~95% | ~200ms | Internet + Azure key |
+| Vosk | Disk icon (orange) | ~75% | ~300ms | Nothing |
+
+The system automatically falls back to Vosk if Azure is unavailable.
 
 ## Quick Start
 
@@ -44,9 +46,7 @@ Two speech recognition configurations available on separate branches:
 ```bash
 python3 -m venv ~/gramps-env
 source ~/gramps-env/bin/activate
-pip install pyqt6 vosk websocket-client sounddevice numpy
-# Optional: pip install faster-whisper scipy
-# Optional: pip install azure-cognitiveservices-speech
+pip install pyqt6 vosk azure-cognitiveservices-speech sounddevice numpy
 ```
 
 ### 2. Download Vosk model (offline fallback)
@@ -62,149 +62,66 @@ mv vosk-model-small-en-gb-0.15 vosk-uk
 
 ```bash
 cp credentials.py.example credentials.py
-# Edit credentials.py with your API key (Deepgram or Azure depending on branch)
+# Edit credentials.py with your Azure Speech key and region
 ```
 
 ### 4. Install systemd services
 
 ```bash
 mkdir -p ~/.config/systemd/user
-cp systemd/caption.service ~/.config/systemd/user/
-cp systemd/gramps-mute.service ~/.config/systemd/user/
+cp caption.service ~/.config/systemd/user/
+cp gramps-mute.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now caption gramps-mute
 ```
 
-### 5. Install system watchdogs (optional, requires root)
+## Display Modes
 
-```bash
-sudo cp scripts/caption-watchdog.sh /usr/local/bin/
-sudo cp scripts/display-watchdog.sh /usr/local/bin/
-sudo cp scripts/network-watchdog.sh /usr/local/bin/
-sudo chmod +x /usr/local/bin/*-watchdog.sh
-sudo cp systemd/caption-watchdog.service systemd/caption-watchdog.timer /etc/systemd/system/
-sudo cp systemd/display-watchdog.service systemd/display-watchdog.timer /etc/systemd/system/
-sudo cp systemd/network-watchdog.service systemd/network-watchdog.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now caption-watchdog.timer display-watchdog.timer network-watchdog.timer
-```
+### Flip-Clock (Idle)
+When no speech for 90 seconds, displays split-flap clock:
+- DSEG14 font, hours and minutes
+- Auto-dims between 22:00-07:00
+- Instantly switches to captions when speech detected
 
-## Usage
+### Captions (Active)
+- Large text with configurable size and colour
+- Status indicator shows Azure or Offline mode
+- Green phone icon when phone is active
+- Drag anywhere to scroll through history
 
-### Display Modes
+## Resilience Features
 
-**Clock Mode (idle):** Split-flap style clock appears after 90 seconds of silence. Auto-dims between 22:00-07:00.
+- **Auto-unmute** - Mic forced to 100% on every startup
+- **Graceful degradation** - Works without phone recorder
+- **Offline fallback** - Vosk if Azure unavailable
+- **Clean shutdown** - Mic always unmuted on exit
+- **Watchdog** - Auto-restart on crash
 
-**Caption Mode (active):** Automatically switches when speech is detected.
+## Troubleshooting
 
-### Touch Controls
+### No captions appearing
+1. Check TONOR mic LED is ON (not muted)
+2. Check mic level: `amixer -c 1 sget Mic`
+3. Restart: `systemctl --user restart caption.service`
 
-- **S / M / L** - Change font size
-- **Colour circles** - Switch colour scheme (white/black, black/white, yellow/black, green/black)
-- **ONLINE / OFFLINE** - Toggle transcription engine
-- **Drag** - Scroll through caption history
-- **Escape** - Exit application
+### Mic recording silence
+Try unplugging and replugging the TONOR USB cable.
 
-### Phone Calls
-
-When a landline call is detected via the Fi3001A USB recorder, the system automatically:
-1. Switches to phone audio input
-2. Shows a phone icon in the caption bar
-3. Switches back to room mic after 10 seconds of silence
-
-## Architecture
-
-```
-┌─────────────────┐     ┌─────────────────┐
-│ Fi3001A Phone   │     │ TONOR G11 Mic   │
-│ (hw:0, 8kHz)    │     │ (hw:1, 16kHz)   │
-└────────┬────────┘     └────────┬────────┘
-         │                       │
-         └───────────┬───────────┘
-                     │
-              ┌──────▼──────┐
-              │  Deepgram   │  ← online (main)
-              │     OR      │
-              │faster-whisper│  ← offline fallback
-              │     OR      │
-              │    Vosk     │  ← offline fallback
-              └──────┬──────┘
-                     │
-              ┌──────▼──────┐
-              │   PyQt6     │
-              │  Fullscreen │
-              └──────┬──────┘
-                     │
-              ┌──────▼──────┐
-              │ 10" Touch   │
-              │   Screen    │
-              └─────────────┘
-```
+### Azure not connecting
+- Verify internet connection
+- Check Azure key in `credentials.py`
+- Confirm your Azure region endpoint is accessible
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `caption_app.py` | Main application - UI, transcription, phone switching |
-| `mute_helper.py` | Phone activity detector - monitors USB recorder |
-| `credentials.py.example` | Template for API credentials |
-| `scripts/` | System watchdog scripts |
-| `systemd/` | Service files for auto-start and monitoring |
-
-## Troubleshooting
-
-### No captions appearing
-
-1. Check microphone levels:
-   ```bash
-   amixer -c 0 sget Mic  # Phone mic
-   amixer -c 1 sget Mic  # Room mic
-   ```
-
-2. Check service status:
-   ```bash
-   systemctl --user status caption.service
-   ```
-
-3. Check audio devices are connected:
-   ```bash
-   arecord -l
-   ```
-
-4. Restart service:
-   ```bash
-   systemctl --user restart caption.service
-   ```
-
-### Service keeps crashing
-
-```bash
-journalctl --user -u caption.service -f
-```
-
-### TONOR mic recording silence
-
-Check the mute button LED on the microphone:
-- **LED ON** = Microphone active (working)
-- **LED OFF** = Microphone muted (no audio)
-
-Try unplugging and replugging the USB cable.
-
-## Reliability Features
-
-### Application Level
-- Thread-safe state management
-- Automatic engine fallback (Deepgram -> faster-whisper -> Vosk)
-- Health monitoring with auto-restart (max 5 attempts)
-- Stale transcription detection (restarts after 2 min silence)
-- Phone detection with device handoff
-
-### System Level
-- systemd watchdog integration (Type=notify)
-- Caption service watchdog timer (checks every 60s)
-- Display watchdog timer (restarts LightDM, reboots if needed)
-- Network watchdog timer (pings gateway every 2 min, restarts WiFi)
-- LightDM aggressive restart policy
+| `azure_stream.py` | Main app with Azure + Vosk fallback |
+| `whisper_stream.py` | Alternative whisper.cpp streaming app |
+| `mute_helper.py` | Auto-mute room mic when phone active |
+| `credentials.py.example` | Template for Azure credentials |
+| `fonts/` | DSEG14 font for flip-clock display |
+| `daily_caption_automation.yaml` | Home Assistant usage reporting template |
 
 ## License
 

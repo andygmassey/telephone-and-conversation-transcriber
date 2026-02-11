@@ -1,8 +1,6 @@
 [Unit]
 Description=Gramps Phone Mute Helper
 After=sound.target
-StartLimitIntervalSec=300
-StartLimitBurst=10
 
 [Service]
 Type=notify
@@ -10,11 +8,6 @@ Environment=PYTHONUNBUFFERED=1
 ExecStart=%h/gramps-env/bin/python %h/gramps-transcriber/mute_helper.py
 Restart=always
 RestartSec=5
-WatchdogSec=60
-
-# Resource limits
-MemoryMax=256M
-CPUQuota=20%
 
 [Install]
 WantedBy=default.target

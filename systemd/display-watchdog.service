@@ -1,7 +1,0 @@
-[Unit]
-Description=Display Watchdog - Ensures LightDM is running
-After=lightdm.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/display-watchdog.sh

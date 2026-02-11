@@ -1,0 +1,18 @@
+[Unit]
+Description=Gramps Caption Service (Azure)
+After=sound.target graphical-session.target
+
+[Service]
+Type=notify
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=PYTHONUNBUFFERED=1
+ExecStartPre=/bin/sleep 3
+ExecStart=%h/gramps-env/bin/python %h/gramps-transcriber/azure_stream.py
+Restart=always
+RestartSec=5
+WatchdogSec=60
+
+[Install]
+WantedBy=default.target

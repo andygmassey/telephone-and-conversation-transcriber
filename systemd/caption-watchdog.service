@@ -1,6 +1,0 @@
-[Unit]
-Description=Caption Service Watchdog
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/caption-watchdog.sh
