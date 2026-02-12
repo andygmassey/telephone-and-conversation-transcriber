@@ -1,0 +1,13 @@
+[Unit]
+Description=Gramps Transcriber Setup Wizard
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/gramps-env/bin/python %h/gramps-transcriber/setup/app.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
