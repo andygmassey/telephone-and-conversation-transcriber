@@ -6,6 +6,16 @@ This branch uses **Azure Speech Services** (en-GB) with automatic **Vosk** offli
 
 ![The transcriber in action — live captions on a 10" touchscreen while Dad's on the phone](photo.jpg)
 
+## Community
+
+I originally built this just for my Dad, but after sharing it on Reddit ([r/raspberry_pi](https://www.reddit.com/r/raspberry_pi/comments/1r1ndvc/), [r/deaf](https://www.reddit.com/r/deaf/comments/1r1nf5u/)) the response was overwhelming. Hundreds of people reached out — many from the deaf and hard-of-hearing community — telling me how much something like this would help them or someone they love.
+
+That response made me realise this could be genuinely useful to a lot of people, not just my Dad. So I'm now working on something new — a more polished, more accessible version designed from the ground up for the HoH community. Watch this space.
+
+In the meantime, this project is fully open source and works well. If you build one, I'd love to hear about it — [open an issue](https://github.com/andygmassey/telephone-and-conversation-transcriber/issues) or reach out on Reddit.
+
+> **Note:** The `main` branch has the latest version with 7 cloud providers, easy install, and a web setup wizard. This branch (`azure-test`) is a simpler version focused on Azure Speech Services.
+
 ## Features
 
 - **Live Captions** - Real-time speech-to-text using Azure Speech (en-GB)
@@ -93,11 +103,15 @@ When no speech for 90 seconds, displays split-flap clock:
 
 ## Resilience Features
 
-- **Auto-unmute** - Mic forced to 100% on every startup
-- **Graceful degradation** - Works without phone recorder
-- **Offline fallback** - Vosk if Azure unavailable
-- **Clean shutdown** - Mic always unmuted on exit
-- **Watchdog** - Auto-restart on crash
+This is a device that sits next to an elderly person's phone — it needs to work every time, without anyone touching it.
+
+- **Auto-unmute** — mic forced to 100% on every startup
+- **Graceful degradation** — works with or without phone recorder
+- **Offline fallback** — automatic Vosk fallback if Azure is unavailable
+- **Clean shutdown** — mic always unmuted on exit
+- **systemd watchdog** — auto-restart on crash
+
+The `caption_app.py` (Deepgram/Vosk version) on this branch also includes comprehensive reliability improvements: generation-based thread tracking, sustained success patterns, subprocess health monitoring, zombie process prevention, and targeted process management. See the `main` branch README for full details.
 
 ## Troubleshooting
 
@@ -118,8 +132,9 @@ Try unplugging and replugging the TONOR USB cable.
 
 | File | Purpose |
 |------|---------|
-| `azure_stream.py` | Main app with Azure + Vosk fallback |
-| `whisper_stream.py` | Alternative whisper.cpp streaming app |
+| `azure_stream.py` | Main app — Azure Speech with Vosk fallback |
+| `caption_app.py` | Alternative app — Deepgram with Vosk fallback (includes reliability fixes) |
+| `whisper_stream.py` | Alternative app — whisper.cpp streaming |
 | `mute_helper.py` | Auto-mute room mic when phone active |
 | `credentials.py.example` | Template for Azure credentials |
 | `fonts/` | DSEG14 font for flip-clock display |
