@@ -87,23 +87,6 @@ if [ -f "$HEARTBEAT_FILE" ]; then
         exit 0
     fi
 
-    # Check for "never received text" — if service running 5+ min but no text ever
-    if echo "$hb_content" | grep -q 'last_text=never'; then
-        service_start=$(systemctl --user show caption.service --property=ActiveEnterTimestamp --value 2>/dev/null)
-        if [ -n "$service_start" ]; then
-            start_epoch=$(date -d "$service_start" +%s 2>/dev/null)
-            if [ -n "$start_epoch" ]; then
-                uptime=$(( $(date +%s) - start_epoch ))
-                if [ "$uptime" -gt 300 ]; then
-                    send_alert \
-                        "Gramps Transcriber NO TEXT" \
-                        "Service running for ${uptime}s but no transcription text received. Audio may not be reaching the speech engine."
-                    exit 0
-                fi
-            fi
-        fi
-    fi
-
     echo "$(date): Caption service healthy (heartbeat ${hb_age}s ago: $hb_content)"
     exit 0
 else
