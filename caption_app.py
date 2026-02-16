@@ -42,7 +42,8 @@ class TranscriptionState:
         self._restarting = False
         self._max_restarts = 5
         self._current_proc = None
-        self._restarting = False
+        self._generation = 0
+        self._success_time = 0
 
     @property
     def mode(self):
@@ -94,6 +95,16 @@ class TranscriptionState:
         with self._lock:
             self._last_text_time = value
 
+    @property
+    def generation(self):
+        with self._lock:
+            return self._generation
+
+    def next_generation(self):
+        with self._lock:
+            self._generation += 1
+            return self._generation
+
     def stop(self):
         self._stop_event.set()
 
@@ -115,10 +126,34 @@ class TranscriptionState:
     def reset_restart_count(self):
         with self._lock:
             self._restart_count = 0
-        self._restarting = False
+            self._restarting = False
+
+    def mark_success(self):
+        """Mark working transcription — resets restart count after 60s sustained"""
+        with self._lock:
+            now = time.time()
+            self._last_text_time = now
+            if self._success_time == 0:
+                self._success_time = now
+            elif now - self._success_time > 60 and self._restart_count > 0:
+                print(f"Sustained success for 60s, resetting restart count (was {self._restart_count})", flush=True)
+                self._restart_count = 0
+
+    def reset_success_timer(self):
+        with self._lock:
+            self._success_time = 0
 
     def set_proc(self, proc):
         with self._lock:
+            if self._current_proc:
+                try:
+                    self._current_proc.kill()
+                except:
+                    pass
+                try:
+                    self._current_proc.wait(timeout=1)
+                except:
+                    pass
             self._current_proc = proc
 
     def is_restarting(self):
@@ -136,8 +171,18 @@ class TranscriptionState:
                     self._current_proc.kill()
                 except:
                     pass
+                try:
+                    self._current_proc.wait(timeout=2)
+                except:
+                    pass
                 self._current_proc = None
-        self._restarting = False
+
+    def proc_alive(self):
+        with self._lock:
+            if self._current_proc is None:
+                return False
+            return self._current_proc.poll() is None
+
 
 state = TranscriptionState()
 
@@ -211,7 +256,7 @@ def faster_whisper_thread():
     """Run faster-whisper for high quality offline transcription"""
     print('Starting faster-whisper...', flush=True)
     emitter.status_changed.emit('whisper')
-    state.thread_alive = True
+    # thread_alive already set by start_transcription
     arecord = None
 
     try:
@@ -239,16 +284,29 @@ def faster_whisper_thread():
         audio_device = get_audio_device()
         print(f"Using audio device: {audio_device}", flush=True)
 
-        # Start arecord
-        arecord = subprocess.Popen(
-            ['arecord', '-D', audio_device, '-f', 'S16_LE', '-r', '16000', '-c', '1', '-t', 'raw', '-q'],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        )
-        state.set_proc(arecord)
+        # Start arecord with retry
+        for attempt in range(4):
+            arecord = subprocess.Popen(
+                ['arecord', '-D', audio_device, '-f', 'S16_LE', '-r', '16000', '-c', '1', '-t', 'raw', '-q'],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            state.set_proc(arecord)
+            time.sleep(0.3)
+            if arecord.poll() is None:
+                print(f'arecord ready (attempt {attempt+1})', flush=True)
+                break
+            else:
+                arecord = None
+                if attempt < 3:
+                    time.sleep(1)
+
+        if not arecord:
+            raise RuntimeError('Could not start arecord after 4 attempts')
+
 
         print('faster-whisper ready', flush=True)
         emitter.mode_ready.emit('offline')
-        state.reset_restart_count()
+
 
         buffer = b''
 
@@ -295,7 +353,7 @@ def faster_whisper_thread():
                     text = segment.text.strip()
                     if text:
                         print(f'>>> {text}', flush=True)
-                        state.last_text_time = time.time()
+                        state.mark_success()
                         emitter.new_text.emit(text)
 
     except ImportError as e:
@@ -318,6 +376,7 @@ def faster_whisper_thread():
             except:
                 try:
                     arecord.kill()
+                    arecord.wait(timeout=1)  # Reap zombie
                 except:
                     pass
         state.kill_proc()
@@ -331,7 +390,7 @@ def vosk_thread():
     """Run Vosk streaming with robust error handling"""
     print('Starting Vosk...', flush=True)
     emitter.status_changed.emit('vosk')
-    state.thread_alive = True
+    # thread_alive already set by start_transcription
     arecord = None
 
     try:
@@ -375,7 +434,7 @@ def vosk_thread():
 
         print('Vosk ready', flush=True)
         emitter.mode_ready.emit('offline')
-        state.reset_restart_count()  # Successful start, reset counter
+
 
         consecutive_empty = 0
         while not state.is_stopped():
@@ -395,7 +454,7 @@ def vosk_thread():
                     text = result.get('text', '').strip()
                     if text:
                         print(f'>>> {text}', flush=True)
-                        state.last_text_time = time.time()
+                        state.mark_success()
                         emitter.new_text.emit(text)
             except Exception as e:
                 print(f"Vosk read error: {e}", flush=True)
@@ -418,6 +477,7 @@ def vosk_thread():
             except:
                 try:
                     arecord.kill()
+                    arecord.wait(timeout=1)  # Reap zombie
                 except:
                     pass
         state.kill_proc()
@@ -433,7 +493,7 @@ def whisper_thread():
     """Run whisper.cpp streaming for better quality offline transcription"""
     print('Starting Whisper.cpp stream...', flush=True)
     emitter.status_changed.emit('whisper')
-    state.thread_alive = True
+    # thread_alive already set by start_transcription
     proc = None
 
     try:
@@ -473,7 +533,7 @@ def whisper_thread():
 
         print('Whisper ready', flush=True)
         emitter.mode_ready.emit('offline')
-        state.reset_restart_count()
+
 
         for line in iter(proc.stdout.readline, ''):
             if state.is_stopped():
@@ -494,7 +554,7 @@ def whisper_thread():
                 continue
 
             print(f'>>> {line}', flush=True)
-            state.last_text_time = time.time()
+            state.mark_success()
             emitter.new_text.emit(line)
 
     except FileNotFoundError as e:
@@ -517,6 +577,7 @@ def whisper_thread():
             except:
                 try:
                     proc.kill()
+                    proc.wait(timeout=1)  # Reap zombie
                 except:
                     pass
         state.kill_proc()
@@ -531,12 +592,13 @@ def deepgram_thread():
     if not DEEPGRAM_KEY:
         print('No Deepgram API key', flush=True)
         emitter.status_changed.emit('no-key')
+        state.thread_alive = False
         emitter.thread_died.emit('online')
         return
 
     print('Starting Deepgram...', flush=True)
     emitter.status_changed.emit('deepgram')
-    state.thread_alive = True
+    # thread_alive already set by start_transcription
     arecord = None
 
     try:
@@ -584,7 +646,7 @@ def deepgram_thread():
                         if data.get('speech_final', False):
                             t = t + '\n'
                         print(f'>>> {t.strip()}', flush=True)
-                        state.last_text_time = time.time()
+                        state.mark_success()
                         emitter.new_text.emit(t)
             except Exception as e:
                 print(f'Parse error: {e}', flush=True)
@@ -597,7 +659,7 @@ def deepgram_thread():
             print('Deepgram connected', flush=True)
             ws_connected.set()
             emitter.mode_ready.emit('online')
-            state.reset_restart_count()
+
             ws.send(test_data, opcode=2)
 
             def send_audio():
@@ -607,7 +669,8 @@ def deepgram_thread():
                         if chunk:
                             ws.send(chunk, opcode=2)
                         else:
-                            time.sleep(0.01)
+                            print("send_audio: arecord returned empty data, stopping", flush=True)
+                            break
                     except Exception as e:
                         print(f"Send error: {e}", flush=True)
                         break
@@ -648,6 +711,7 @@ def deepgram_thread():
             except:
                 try:
                     arecord.kill()
+                    arecord.wait(timeout=1)  # Reap zombie
                 except:
                     pass
         state.kill_proc()
@@ -659,24 +723,50 @@ def deepgram_thread():
 
 def start_transcription(mode):
     """Start transcription with cleanup"""
-    cleanup_audio_processes()
+    state.kill_proc()  # Targeted kill only — no blanket pkill
+    time.sleep(0.3)
     ensure_mic_volume()
     state.clear_stop()
-    state.last_text_time = 0  # Reset so health check waits for fresh data
+    state.last_text_time = 0
     state.mode = mode
+    state.reset_success_timer()
+    state.thread_alive = True
+    gen = state.next_generation()
+    print(f"Starting transcription gen={gen} mode={mode}", flush=True)
 
     if mode == 'online':
-        threading.Thread(target=deepgram_thread, daemon=True).start()
+        provider = CONFIG.get('stt_provider', 'deepgram')
+        provider_threads = {
+            'deepgram': deepgram_thread,
+            'assemblyai': assemblyai_thread,
+            'azure': azure_thread,
+            'groq': groq_thread,
+            'interfaze': interfaze_thread,
+            'openai': openai_thread,
+            'google': google_thread,
+        }
+        target = provider_threads.get(provider, deepgram_thread)
+        print(f'Starting online transcription with {provider}', flush=True)
+        threading.Thread(target=target, daemon=True).start()
     else:
-        threading.Thread(target=faster_whisper_thread, daemon=True).start()
+        offline_model = CONFIG.get('offline_model', 'faster-whisper')
+        offline_threads = {
+            'faster-whisper': faster_whisper_thread,
+            'vosk': vosk_thread,
+            'whisper-cpp': whisper_thread,
+        }
+        target = offline_threads.get(offline_model, faster_whisper_thread)
+        print(f'Starting offline transcription with {offline_model}', flush=True)
+        threading.Thread(target=target, daemon=True).start()
+
 
 
 def stop_transcription():
     """Stop transcription cleanly"""
     state.stop()
-    cleanup_audio_processes()
-    state.kill_proc()
-    time.sleep(1)
+    state.kill_proc()  # Targeted kill only — no blanket pkill
+    time.sleep(0.5)
+
 
 
 def switch_mode(new_mode):
@@ -1015,59 +1105,81 @@ class MainWindow(QMainWindow):
 
     def health_check(self):
         """Monitor transcription health and restart if needed"""
-        # Skip if restart already in progress
-        if state.is_restarting():
+        if state.is_restarting() or state.is_stopped():
             return
-        # Check if thread is alive
-        if not state.thread_alive and not state.is_stopped():
-            # Thread died unexpectedly
+
+        problem = None
+
+        if not state.thread_alive:
+            problem = "thread dead"
+        elif not state.proc_alive():
+            problem = "arecord subprocess dead"
+        elif state.last_text_time > 0:
+            stale_time = time.time() - state.last_text_time
+            if stale_time > 120:
+                problem = f"no transcription for {stale_time:.0f}s"
+
+        if problem:
             if state.can_restart():
+                state.set_restarting(True)
                 count = state.increment_restart()
-                print(f"Health check: Thread dead, restarting (attempt {count})...", flush=True)
+                gen = state.generation
+                print(f"Health check: {problem}, restarting (attempt {count}, gen={gen})...", flush=True)
                 self.caption_view.set_status('restarting')
-                # Delay restart slightly
-                QTimer.singleShot(2000, lambda: start_transcription(state.mode))
+                mode = state.mode
+                if state.thread_alive:
+                    stop_transcription()
+                def do_health_restart(expected_gen=gen):
+                    if state.generation != expected_gen:
+                        print(f"Health restart skipped: gen changed {expected_gen}->{state.generation}", flush=True)
+                        state.set_restarting(False)
+                        return
+                    start_transcription(mode)
+                    state.set_restarting(False)
+                QTimer.singleShot(2000, do_health_restart)
             else:
-                print("Health check: Max restarts exceeded, giving up", flush=True)
+                print(f"Health check: {problem}, max restarts exceeded, giving up", flush=True)
                 self.caption_view.set_status('error')
 
-        # Check for stale transcription (no text for too long while thread alive)
-        if state.thread_alive and state.last_text_time > 0:
-            stale_time = time.time() - state.last_text_time
-            if stale_time > 120:  # 2 minutes with no text
-                print(f"Health check: No transcription for {stale_time:.0f}s, restarting...", flush=True)
-                if state.can_restart():
-                    state.increment_restart()
-                    self.caption_view.set_status('restarting')
-                    stop_transcription()
-                    QTimer.singleShot(2000, lambda: start_transcription(state.mode))
 
     def on_thread_died(self, mode):
         """Handle thread death signal with automatic fallback"""
         if state.is_restarting():
-            print("Restart already in progress, skipping", flush=True)
+            print("Restart already in progress, skipping thread_died signal", flush=True)
             return
-        if state.can_restart() and not state.is_stopped():
+        if state.is_stopped():
+            return
+        if state.can_restart():
             state.set_restarting(True)
             count = state.increment_restart()
+            gen = state.generation
 
-            # After 3 consecutive online failures, fall back to offline
             if mode == 'online' and count >= 3 and not state.use_phone_audio:
-                print(f"Online mode failed {count} times, falling back to offline", flush=True)
+                print(f"Online mode failed {count} times, falling back to offline (gen={gen})", flush=True)
                 self.caption_view.set_status('fallback')
-                def do_fallback():
+                def do_fallback(expected_gen=gen):
+                    if state.generation != expected_gen:
+                        state.set_restarting(False)
+                        return
                     state.reset_restart_count()
                     start_transcription('offline')
                     self.caption_view.set_mode('offline')
                     state.set_restarting(False)
                 QTimer.singleShot(2000, do_fallback)
             else:
-                print(f"Thread died, scheduling restart (attempt {count})...", flush=True)
+                print(f"Thread died (gen={gen}), scheduling restart (attempt {count})...", flush=True)
                 self.caption_view.set_status('restarting')
-                def do_restart():
+                def do_restart(expected_gen=gen):
+                    if state.generation != expected_gen:
+                        state.set_restarting(False)
+                        return
                     start_transcription(mode)
                     state.set_restarting(False)
                 QTimer.singleShot(3000, do_restart)
+        else:
+            print("Thread died but max restarts exceeded, giving up", flush=True)
+            self.caption_view.set_status('error')
+
 
     def check_muted(self):
         """Check phone status and handle audio device switching"""
@@ -1093,12 +1205,13 @@ class MainWindow(QMainWindow):
                     state.last_phone_speech = time.time()
                     state.last_text_time = time.time()
                     if not state.is_restarting():
-                        print('Phone active - restarting with phone recorder (hw:0,0)', flush=True)
+                        print('Phone active - restarting with phone recorder', flush=True)
                         state.set_restarting(True)
                         stop_transcription()
-                        time.sleep(0.5)  # Wait for mute_helper to fully release device
-                        start_transcription('online')
-                        state.set_restarting(False)
+                        def do_phone_start():
+                            start_transcription('online')
+                            state.set_restarting(False)
+                        QTimer.singleShot(500, do_phone_start)
                     else:
                         print('Phone active - restart in progress, waiting', flush=True)
                 self.phone_was_active = True
@@ -1107,15 +1220,17 @@ class MainWindow(QMainWindow):
                 if self.phone_was_active:
                     state.use_phone_audio = False
                     if not state.is_restarting():
-                        print('Phone ended - restarting with room mic (hw:1,0)', flush=True)
+                        print('Phone ended - restarting with room mic', flush=True)
                         state.set_restarting(True)
                         stop_transcription()
-                        time.sleep(0.5)
-                        start_transcription('online')
-                        state.set_restarting(False)
+                        def do_room_start():
+                            start_transcription('online')
+                            state.set_restarting(False)
+                        QTimer.singleShot(500, do_room_start)
                     else:
                         print('Phone ended - restart in progress, waiting', flush=True)
                 self.phone_was_active = False
+
         except Exception as e:
             print(f'check_muted error: {e}', flush=True)
 
@@ -1158,26 +1273,21 @@ def main():
     print('Starting Gramps Captions (BULLETPROOF VERSION)', flush=True)
     print('='*50, flush=True)
 
-    # Clear stale state
     clear_stale_state()
-
-    # Cleanup any stale processes
     cleanup_audio_processes()
-
-    # Ensure mic volume
     ensure_mic_volume()
 
-    # Notify systemd
+    # Create QApplication FIRST — Qt signals require this
+    app = QApplication(sys.argv)
+
     try:
         import systemd.daemon
         systemd.daemon.notify('READY=1')
     except:
         pass
 
-    # Start with offline mode
     start_transcription('online')
 
-    # Watchdog thread
     def watchdog():
         try:
             import systemd.daemon
@@ -1188,10 +1298,10 @@ def main():
             pass
     threading.Thread(target=watchdog, daemon=True).start()
 
-    app = QApplication(sys.argv)
     win = MainWindow()
     win.show()
     sys.exit(app.exec())
+
 
 
 if __name__ == '__main__':
