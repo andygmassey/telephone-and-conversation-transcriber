@@ -1119,6 +1119,10 @@ class MainWindow(QMainWindow):
             if stale_time > 120:
                 problem = f"no transcription for {stale_time:.0f}s"
 
+        if not problem:
+            print(f"heartbeat: gen={state.generation} mode={state.mode} thread={state.thread_alive} proc={state.proc_alive()}", flush=True)
+            return
+
         if problem:
             if state.can_restart():
                 state.set_restarting(True)
