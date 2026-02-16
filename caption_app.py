@@ -44,6 +44,7 @@ class TranscriptionState:
         self._current_proc = None
         self._generation = 0
         self._success_time = 0
+        self._retry_online_at = 0  # Timestamp to retry online mode (0=disabled)
 
     @property
     def mode(self):
@@ -138,6 +139,7 @@ class TranscriptionState:
             elif now - self._success_time > 60 and self._restart_count > 0:
                 print(f"Sustained success for 60s, resetting restart count (was {self._restart_count})", flush=True)
                 self._restart_count = 0
+                self._retry_online_at = 0  # Online working, stop retry
 
     def reset_success_timer(self):
         with self._lock:
@@ -1120,7 +1122,30 @@ class MainWindow(QMainWindow):
                 problem = f"no transcription for {stale_time:.0f}s"
 
         if not problem:
-            print(f"heartbeat: gen={state.generation} mode={state.mode} thread={state.thread_alive} proc={state.proc_alive()}", flush=True)
+            # Retry online mode if we previously fell back to offline
+            if (state._retry_online_at > 0
+                    and state.mode == 'offline'
+                    and time.time() > state._retry_online_at
+                    and not state.is_restarting()):
+                state._retry_online_at = 0
+                state.reset_restart_count()
+                print("Retrying online mode...", flush=True)
+                stop_transcription()
+                QTimer.singleShot(2000, lambda: start_transcription('online'))
+                return
+
+            # Write heartbeat file (primary health signal for monitor)
+            try:
+                elapsed = f"{time.time() - state.last_text_time:.0f}s" if state.last_text_time > 0 else "never"
+                with open('/tmp/caption_heartbeat', 'w') as f:
+                    f.write(f"{time.time()} gen={state.generation} mode={state.mode} thread={state.thread_alive} proc={state.proc_alive()} last_text={elapsed}")
+            except Exception:
+                pass
+
+            # Print to log every 5 min (every 10th check) for diagnostics
+            self._hb_count = getattr(self, '_hb_count', 0) + 1
+            if self._hb_count % 10 == 1:
+                print(f"heartbeat: gen={state.generation} mode={state.mode}", flush=True)
             return
 
         if problem:
@@ -1166,9 +1191,11 @@ class MainWindow(QMainWindow):
                         state.set_restarting(False)
                         return
                     state.reset_restart_count()
+                    state._retry_online_at = time.time() + 600  # Retry online in 10 min
                     start_transcription('offline')
                     self.caption_view.set_mode('offline')
                     state.set_restarting(False)
+                    print("Will retry online mode in 10 minutes", flush=True)
                 QTimer.singleShot(2000, do_fallback)
             else:
                 print(f"Thread died (gen={gen}), scheduling restart (attempt {count})...", flush=True)
