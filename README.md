@@ -6,6 +6,14 @@ It picks up both phone calls (via a USB telephone recorder tapped into the landl
 
 ![The transcriber in action — live captions on a 10" touchscreen while Dad's on the phone](photo.jpg)
 
+## Community
+
+I originally built this just for my Dad, but after sharing it on Reddit ([r/raspberry_pi](https://www.reddit.com/r/raspberry_pi/comments/1r1ndvc/), [r/deaf](https://www.reddit.com/r/deaf/comments/1r1nf5u/)) the response was overwhelming. Hundreds of people reached out — many from the deaf and hard-of-hearing community — telling me how much something like this would help them or someone they love.
+
+That response made me realise this could be genuinely useful to a lot of people, not just my Dad. So I'm now working on something new — a more polished, more accessible version designed from the ground up for the HoH community. Watch this space.
+
+In the meantime, this project is fully open source and works well. If you build one, I'd love to hear about it — [open an issue](https://github.com/andygmassey/telephone-and-conversation-transcriber/issues) or reach out on Reddit.
+
 ## Easy Install
 
 Got your Raspberry Pi set up with Raspberry Pi OS? Just run this one line:
@@ -185,7 +193,18 @@ systemctl --user daemon-reload
 systemctl --user enable --now caption gramps-mute
 ```
 
-### 5. Install system watchdogs (optional, requires root)
+### 5. Install health monitor (recommended)
+
+The caption monitor checks every 5 minutes that the transcriber is healthy — service running, audio capture alive, no restart loops, and logs aren't stale. It can optionally send alerts via Home Assistant or any webhook.
+
+```bash
+cp systemd/caption-monitor.service ~/.config/systemd/user/
+cp systemd/caption-monitor.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now caption-monitor.timer
+```
+
+### 6. Install system watchdogs (optional, requires root)
 
 ```bash
 sudo cp scripts/caption-watchdog.sh /usr/local/bin/
@@ -234,8 +253,9 @@ sudo systemctl enable --now caption-watchdog.timer display-watchdog.timer networ
 | `install.sh` | One-line installer for fresh Raspberry Pi |
 | `setup/` | Web setup wizard (Flask app on port 8080) |
 | `credentials.py.example` | Template for API credentials |
-| `scripts/` | System watchdog scripts |
-| `systemd/` | Service files for auto-start and monitoring |
+| `scripts/` | System watchdog and health monitor scripts |
+| `scripts/caption-monitor.sh` | External health monitor — checks service health every 5 min, sends alerts |
+| `systemd/` | Service and timer files for auto-start and monitoring |
 | `docs/` | Additional guides (SD card image, etc.) |
 
 ## Troubleshooting
@@ -285,19 +305,25 @@ Try unplugging and replugging the USB cable.
 
 ## Reliability Features
 
+This is a device that sits next to an elderly person's phone — it needs to work every time, without anyone touching it. A lot of effort has gone into making it resilient to every failure mode we've encountered in real-world use.
+
 ### Application Level
-- Thread-safe state management
-- Automatic engine fallback (online → offline if cloud fails)
-- Health monitoring with auto-restart (max 5 attempts)
-- Stale transcription detection (restarts after 2 min silence)
-- Phone detection with device handoff
+- **Generation-based thread tracking** — each transcription session gets a unique generation number, so stale restart callbacks from old sessions are safely ignored
+- **Sustained success pattern** — the restart counter only resets after 60 continuous seconds of receiving transcription text, preventing infinite restart loops
+- **Subprocess health monitoring** — health checks verify the audio capture process (`arecord`) is actually alive, not just that the thread is running
+- **Targeted subprocess management** — stops only the tracked audio process rather than using blanket process kills, preventing race conditions
+- **Zombie process prevention** — proper subprocess reaping with `wait()` after every `kill()` to prevent defunct process accumulation
+- **Automatic engine fallback** — switches from cloud to offline engine if the cloud service fails
+- **Stale transcription detection** — restarts after 2 minutes of silence during an active session
+- **Async phone switching** — phone on/off transitions happen asynchronously to avoid blocking the UI
+- **Thread-safe state management** — all shared state protected by locks
 
 ### System Level
-- systemd watchdog integration (Type=notify)
-- Caption service watchdog timer (checks every 60s)
-- Display watchdog timer (restarts LightDM, reboots if needed)
-- Network watchdog timer (pings gateway every 2 min, restarts WiFi)
-- LightDM aggressive restart policy
+- **External health monitor** — `caption-monitor.sh` runs every 5 minutes via systemd timer, checking service status, restart loops, audio capture, and log staleness. Can send alerts via Home Assistant or any webhook
+- **systemd watchdog integration** (Type=notify)
+- **Display watchdog timer** — restarts the display manager if the screen goes blank, reboots if needed
+- **Network watchdog timer** — pings the gateway every 2 minutes, restarts WiFi if connectivity is lost
+- **LightDM aggressive restart policy**
 
 ## Updating
 
