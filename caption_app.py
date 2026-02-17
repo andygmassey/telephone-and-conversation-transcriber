@@ -46,6 +46,8 @@ class TranscriptionState:
         self._success_time = 0
         self._retry_online_at = 0  # Timestamp to retry online mode (0=disabled)
         self._gave_up_at = 0  # Timestamp when max restarts exceeded (0=not given up)
+        self._thread_loop_time = 0  # Updated by thread on each loop iteration
+        self._retry_backoff = 600  # Seconds before retrying online (exponential: 600->1200->2400->3600)
 
     @property
     def mode(self):
@@ -142,10 +144,21 @@ class TranscriptionState:
                 self._restart_count = 0
                 self._retry_online_at = 0  # Online working, stop retry
                 self._gave_up_at = 0  # Clear any gave-up state
+                self._retry_backoff = 600  # Reset backoff to 10 min
 
     def reset_success_timer(self):
         with self._lock:
             self._success_time = 0
+
+    @property
+    def thread_loop_time(self):
+        with self._lock:
+            return self._thread_loop_time
+
+    @thread_loop_time.setter
+    def thread_loop_time(self, value):
+        with self._lock:
+            self._thread_loop_time = value
 
     def set_proc(self, proc):
         with self._lock:
@@ -315,6 +328,7 @@ def faster_whisper_thread():
         buffer = b''
 
         while not state.is_stopped():
+            state.thread_loop_time = time.time()
             # Read audio chunk
             data = arecord.stdout.read(3200)  # 100ms at 16kHz, 16-bit
             if not data:
@@ -442,6 +456,7 @@ def vosk_thread():
 
         consecutive_empty = 0
         while not state.is_stopped():
+            state.thread_loop_time = time.time()
             try:
                 data = arecord.stdout.read(4000)
                 if not data:
@@ -668,6 +683,7 @@ def deepgram_thread():
 
             def send_audio():
                 while not state.is_stopped() and not ws_error.is_set():
+                    state.thread_loop_time = time.time()
                     try:
                         chunk = arecord.stdout.read(3200)
                         if chunk:
@@ -735,6 +751,7 @@ def start_transcription(mode):
     state.mode = mode
     state.reset_success_timer()
     state.thread_alive = True
+    state.thread_loop_time = time.time()
     gen = state.next_generation()
     print(f"Starting transcription gen={gen} mode={mode}", flush=True)
 
@@ -1030,6 +1047,16 @@ class CaptionView(QWidget):
         if self._waiting_for_ready:
             self._waiting_for_ready = False
             self.update_mode_button()
+        # Trim old text to prevent unbounded memory growth
+        doc = self.text.document()
+        if doc.blockCount() > 250:
+            trim_cursor = QTextCursor(doc)
+            trim_cursor.movePosition(QTextCursor.MoveOperation.Start)
+            # Select first 50 blocks for removal
+            for _ in range(50):
+                trim_cursor.movePosition(QTextCursor.MoveOperation.NextBlock, QTextCursor.MoveMode.KeepAnchor)
+            trim_cursor.removeSelectedText()
+            trim_cursor.deleteChar()  # Remove the leftover empty block
         c = self.text.textCursor()
         c.movePosition(QTextCursor.MoveOperation.End)
         now = time.time()
@@ -1118,6 +1145,8 @@ class MainWindow(QMainWindow):
             problem = "thread dead"
         elif not state.proc_alive():
             problem = "arecord subprocess dead"
+        elif state.thread_loop_time > 0 and (time.time() - state.thread_loop_time) > 120:
+            problem = f"thread stuck (no loop for {time.time() - state.thread_loop_time:.0f}s)"
         elif state.last_text_time > 0 and state.mode == 'online':
             stale_time = time.time() - state.last_text_time
             if stale_time > 600:
@@ -1130,6 +1159,7 @@ class MainWindow(QMainWindow):
                     and time.time() > state._retry_online_at
                     and not state.is_restarting()):
                 state._retry_online_at = 0
+                state._retry_backoff = 600  # Reset backoff
                 state.reset_restart_count()
                 print("Retrying online mode...", flush=True)
                 stop_transcription()
@@ -1139,8 +1169,9 @@ class MainWindow(QMainWindow):
             # Write heartbeat file (primary health signal for monitor)
             try:
                 elapsed = f"{time.time() - state.last_text_time:.0f}s" if state.last_text_time > 0 else "never"
+                loop_age = f"{time.time() - state.thread_loop_time:.0f}s" if state.thread_loop_time > 0 else "never"
                 with open('/tmp/caption_heartbeat', 'w') as f:
-                    f.write(f"{time.time()} gen={state.generation} mode={state.mode} thread={state.thread_alive} proc={state.proc_alive()} last_text={elapsed}")
+                    f.write(f"{time.time()} gen={state.generation} mode={state.mode} thread={state.thread_alive} proc={state.proc_alive()} last_text={elapsed} loop={loop_age}")
             except Exception:
                 pass
 
@@ -1184,7 +1215,12 @@ class MainWindow(QMainWindow):
                     self.caption_view.set_status('restarting')
                     mode = state.mode or 'offline'
                     stop_transcription()
-                    def do_cooldown_restart():
+                    gen = state.generation
+                    def do_cooldown_restart(expected_gen=gen):
+                        if state.generation != expected_gen:
+                            print(f"Cooldown restart skipped: gen changed {expected_gen}->{state.generation}", flush=True)
+                            state.set_restarting(False)
+                            return
                         start_transcription(mode)
                         state.set_restarting(False)
                     QTimer.singleShot(3000, do_cooldown_restart)
@@ -1217,11 +1253,12 @@ class MainWindow(QMainWindow):
                         state.set_restarting(False)
                         return
                     state.reset_restart_count()
-                    state._retry_online_at = time.time() + 600  # Retry online in 10 min
+                    state._retry_online_at = time.time() + state._retry_backoff
+                    print(f"Will retry online mode in {state._retry_backoff}s", flush=True)
+                    state._retry_backoff = min(state._retry_backoff * 2, 3600)  # Double up to 1 hour max
                     start_transcription('offline')
                     self.caption_view.set_mode('offline')
                     state.set_restarting(False)
-                    print("Will retry online mode in 10 minutes", flush=True)
                 QTimer.singleShot(2000, do_fallback)
             else:
                 print(f"Thread died (gen={gen}), scheduling restart (attempt {count})...", flush=True)
