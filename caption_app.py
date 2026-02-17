@@ -45,6 +45,7 @@ class TranscriptionState:
         self._generation = 0
         self._success_time = 0
         self._retry_online_at = 0  # Timestamp to retry online mode (0=disabled)
+        self._gave_up_at = 0  # Timestamp when max restarts exceeded (0=not given up)
 
     @property
     def mode(self):
@@ -140,6 +141,7 @@ class TranscriptionState:
                 print(f"Sustained success for 60s, resetting restart count (was {self._restart_count})", flush=True)
                 self._restart_count = 0
                 self._retry_online_at = 0  # Online working, stop retry
+                self._gave_up_at = 0  # Clear any gave-up state
 
     def reset_success_timer(self):
         with self._lock:
@@ -1116,7 +1118,7 @@ class MainWindow(QMainWindow):
             problem = "thread dead"
         elif not state.proc_alive():
             problem = "arecord subprocess dead"
-        elif state.last_text_time > 0:
+        elif state.last_text_time > 0 and state.mode == 'online':
             stale_time = time.time() - state.last_text_time
             if stale_time > 120:
                 problem = f"no transcription for {stale_time:.0f}s"
@@ -1167,8 +1169,32 @@ class MainWindow(QMainWindow):
                     state.set_restarting(False)
                 QTimer.singleShot(2000, do_health_restart)
             else:
-                print(f"Health check: {problem}, max restarts exceeded, giving up", flush=True)
-                self.caption_view.set_status('error')
+                now = time.time()
+                # First time giving up? Record when
+                if state._gave_up_at == 0:
+                    state._gave_up_at = now
+                    print(f"Health check: {problem}, max restarts exceeded, waiting 30 min to retry", flush=True)
+                    self.caption_view.set_status('error')
+                elif now - state._gave_up_at > 1800:
+                    # 30 minutes passed — reset and try again
+                    print(f"Health check: 30 min cooldown expired, resetting and retrying", flush=True)
+                    state._gave_up_at = 0
+                    state.reset_restart_count()
+                    state.set_restarting(True)
+                    self.caption_view.set_status('restarting')
+                    mode = state.mode or 'offline'
+                    stop_transcription()
+                    def do_cooldown_restart():
+                        start_transcription(mode)
+                        state.set_restarting(False)
+                    QTimer.singleShot(3000, do_cooldown_restart)
+                # Always write heartbeat even when in gave-up state
+                try:
+                    elapsed = f"{time.time() - state.last_text_time:.0f}s" if state.last_text_time > 0 else "never"
+                    with open('/tmp/caption_heartbeat', 'w') as f:
+                        f.write(f"{time.time()} gen={state.generation} mode={state.mode} thread={state.thread_alive} proc={state.proc_alive()} last_text={elapsed} status=gave_up")
+                except Exception:
+                    pass
 
 
     def on_thread_died(self, mode):
@@ -1208,8 +1234,11 @@ class MainWindow(QMainWindow):
                     state.set_restarting(False)
                 QTimer.singleShot(3000, do_restart)
         else:
-            print("Thread died but max restarts exceeded, giving up", flush=True)
-            self.caption_view.set_status('error')
+            now = time.time()
+            if state._gave_up_at == 0:
+                state._gave_up_at = now
+                print(f"Thread died, max restarts exceeded, waiting 30 min to retry", flush=True)
+                self.caption_view.set_status('error')
 
 
     def check_muted(self):
