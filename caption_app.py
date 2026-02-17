@@ -1120,7 +1120,7 @@ class MainWindow(QMainWindow):
             problem = "arecord subprocess dead"
         elif state.last_text_time > 0 and state.mode == 'online':
             stale_time = time.time() - state.last_text_time
-            if stale_time > 120:
+            if stale_time > 600:
                 problem = f"no transcription for {stale_time:.0f}s"
 
         if not problem:
