@@ -17,7 +17,7 @@ StandardError=append:%h/caption.log
 Restart=always
 RestartSec=5
 WatchdogSec=120
-TimeoutStartSec=60
+TimeoutStartSec=300
 TimeoutStopSec=10
 
 # Resource limits

@@ -1368,7 +1368,7 @@ class CaptionView(QWidget):
             ('G/B', '#00ff00', '#000000'),
         ]
         self.current_scheme = 0
-        self.current_mode = 'online'
+        self.current_mode = CONFIG.get('speech_mode', 'offline')
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(25, 15, 25, 15)
@@ -1774,7 +1774,7 @@ class MainWindow(QMainWindow):
                         state.set_restarting(True)
                         stop_transcription()
                         def do_phone_start():
-                            start_transcription('online')
+                            start_transcription(state.mode)
                             state.set_restarting(False)
                         QTimer.singleShot(500, do_phone_start)
                     else:
@@ -1789,7 +1789,7 @@ class MainWindow(QMainWindow):
                         state.set_restarting(True)
                         stop_transcription()
                         def do_room_start():
-                            start_transcription('online')
+                            start_transcription(state.mode)
                             state.set_restarting(False)
                         QTimer.singleShot(500, do_room_start)
                     else:
@@ -1851,7 +1851,7 @@ def main():
     except:
         pass
 
-    start_transcription('online')
+    start_transcription(CONFIG.get('speech_mode', 'offline'))
 
     def watchdog():
         try:

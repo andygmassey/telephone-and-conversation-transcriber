@@ -101,6 +101,7 @@ sudo apt-get update -qq || fail "Couldn't update package list. Are you connected
 
 sudo apt-get install -y -qq \
     python3-pyqt6 \
+    qt6-qpa-plugins \
     python3-venv \
     python3-dev \
     libasound2-dev \
@@ -151,6 +152,7 @@ step 5 "Installing Python packages..."
 "$VENV_DIR/bin/pip" install --quiet --upgrade pip 2>/dev/null || warn "Couldn't upgrade pip (continuing with existing version)"
 "$VENV_DIR/bin/pip" install --quiet \
     vosk \
+    faster-whisper \
     sounddevice \
     numpy \
     websocket-client \
