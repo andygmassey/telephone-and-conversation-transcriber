@@ -60,6 +60,7 @@ class TranscriptionState:
         self._retry_online_at = 0  # Timestamp to retry online mode (0=disabled)
         self._gave_up_at = 0  # Timestamp when max restarts exceeded (0=not given up)
         self._thread_loop_time = 0  # Updated by thread on each loop iteration
+        self._provider_ready = False  # Set when provider signals ready (model loaded, arecord started)
         self._retry_backoff = 600  # Seconds before retrying online (exponential: 600->1200->2400->3600)
 
     @property
@@ -172,6 +173,16 @@ class TranscriptionState:
     def thread_loop_time(self, value):
         with self._lock:
             self._thread_loop_time = value
+
+    @property
+    def provider_ready(self):
+        with self._lock:
+            return self._provider_ready
+
+    @provider_ready.setter
+    def provider_ready(self, value):
+        with self._lock:
+            self._provider_ready = value
 
     def set_proc(self, proc):
         with self._lock:
@@ -1220,6 +1231,7 @@ def start_transcription(mode):
     state.reset_success_timer()
     state.thread_alive = True
     state.thread_loop_time = time.time()
+    state.provider_ready = False
     gen = state.next_generation()
     print(f"Starting transcription gen={gen} mode={mode}", flush=True)
 
@@ -1611,9 +1623,9 @@ class MainWindow(QMainWindow):
 
         if not state.thread_alive:
             problem = "thread dead"
-        elif not state.proc_alive():
+        elif state.provider_ready and not state.proc_alive():
             problem = "arecord subprocess dead"
-        elif state.thread_loop_time > 0 and (time.time() - state.thread_loop_time) > 120:
+        elif state.provider_ready and state.thread_loop_time > 0 and (time.time() - state.thread_loop_time) > 120:
             problem = f"thread stuck (no loop for {time.time() - state.thread_loop_time:.0f}s)"
         elif state.last_text_time > 0 and state.mode == 'online':
             stale_time = time.time() - state.last_text_time
@@ -1813,6 +1825,7 @@ class MainWindow(QMainWindow):
         self.caption_view.set_mode(mode)
 
     def on_mode_ready(self, mode):
+        state.provider_ready = True
         self.caption_view.update_mode_button()
 
     def keyPressEvent(self, e):
