@@ -1045,6 +1045,13 @@ def _chunked_api_thread(provider_name, transcribe_fn):
                 audio_chunk = buffer[:chunk_bytes]
                 buffer = buffer[chunk_bytes:]
 
+                # Skip silent chunks to avoid wasting API calls
+                import numpy as np
+                audio_array = np.frombuffer(audio_chunk, dtype=np.int16).astype(np.float32) / 32768.0
+                energy = np.sqrt(np.mean(audio_array**2))
+                if energy < 0.005:
+                    continue
+
                 try:
                     text = transcribe_fn(audio_chunk, sample_rate)
                     if text and text.strip():
