@@ -88,6 +88,17 @@
                         <option value="whisper-cpp">Whisper.cpp (alternative — similar to Faster Whisper)</option>
                     </select>
                 </div>
+                <div class="field-group">
+                    <label>Which Whisper model size?</label>
+                    <p class="help">Smaller models are faster but less accurate. On a Raspberry Pi, <strong>tiny.en</strong> is recommended for real-time use.</p>
+                    <select id="whisper-model" class="device-select">
+                        <option value="tiny.en">tiny.en (fastest — recommended for Raspberry Pi)</option>
+                        <option value="base.en">base.en (fast, slightly more accurate)</option>
+                        <option value="small.en" selected>small.en (good balance — default)</option>
+                        <option value="medium.en">medium.en (slower, more accurate)</option>
+                        <option value="large-v3">large-v3 (slowest, most accurate — needs powerful hardware)</option>
+                    </select>
+                </div>
                 <div class="callout">
                     <p><strong>Faster Whisper</strong> gives the best results without internet. Words appear every few seconds in batches. It's already installed.</p>
                     <p><strong>Vosk</strong> is lighter and faster — words appear almost as you speak — but it makes more mistakes and doesn't add punctuation.</p>
@@ -489,8 +500,9 @@
                 document.getElementById('summary-stt').textContent = providerNames[provider] || provider;
             } else {
                 const model = document.getElementById('offline-model').value;
+                const whisperModel = document.getElementById('whisper-model').value;
                 document.getElementById('summary-stt').textContent =
-                    'Offline — ' + (offlineModelNames[model] || model);
+                    'Offline — ' + (offlineModelNames[model] || model) + ' (' + whisperModel + ')';
             }
 
             goTo('step-review');
@@ -512,6 +524,7 @@
                 speech_mode: speechMode,
                 stt_provider: provider,
                 offline_model: offlineModel,
+                whisper_model: document.getElementById('whisper-model').value,
                 deepgram_key: provider === 'deepgram' ? apiKey : '',
                 assemblyai_key: provider === 'assemblyai' ? apiKey : '',
                 azure_key: provider === 'azure' ? apiKey : '',
@@ -597,6 +610,12 @@
             if (config.offline_model) {
                 const offlineSel = document.getElementById('offline-model');
                 if (offlineSel) offlineSel.value = config.offline_model;
+            }
+
+            // Restore whisper model selection
+            if (config.whisper_model) {
+                const whisperSel = document.getElementById('whisper-model');
+                if (whisperSel) whisperSel.value = config.whisper_model;
             }
 
             // Restore speech mode and provider selection

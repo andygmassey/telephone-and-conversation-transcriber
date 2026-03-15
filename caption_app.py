@@ -62,6 +62,7 @@ class TranscriptionState:
         self._thread_loop_time = 0  # Updated by thread on each loop iteration
         self._provider_ready = False  # Set when provider signals ready (model loaded, arecord started)
         self._retry_backoff = 600  # Seconds before retrying online (exponential: 600->1200->2400->3600)
+        self._user_paused = False  # User manually paused transcription
 
     @property
     def mode(self):
@@ -183,6 +184,16 @@ class TranscriptionState:
     def provider_ready(self, value):
         with self._lock:
             self._provider_ready = value
+
+    @property
+    def user_paused(self):
+        with self._lock:
+            return self._user_paused
+
+    @user_paused.setter
+    def user_paused(self, value):
+        with self._lock:
+            self._user_paused = value
 
     def set_proc(self, proc):
         with self._lock:
@@ -309,9 +320,10 @@ def faster_whisper_thread():
         import numpy as np
 
         # Load model
-        print('Loading Whisper model (small.en)...', flush=True)
+        whisper_model = CONFIG.get('whisper_model', 'small.en')
+        print(f'Loading Whisper model ({whisper_model})...', flush=True)
         model = WhisperModel(
-            "small.en",
+            whisper_model,
             device="cpu",
             compute_type="int8",
             cpu_threads=4,
@@ -1378,13 +1390,18 @@ class ClockView(QWidget):
 class CaptionView(QWidget):
     def __init__(self):
         super().__init__()
-        self.font_sizes = {'S': 28, 'M': 36, 'L': 48}
-        self.current_size = 'M'
+        self.font_size = 36
+        self.font_size_min = 20
+        self.font_size_max = 72
+        self.font_size_step = 4
+        self.font_size_default = 36
         self.color_schemes = [
             ('W/B', '#ffffff', '#000000'),
             ('B/W', '#000000', '#ffffff'),
             ('Y/B', '#ffff00', '#000000'),
-            ('G/B', '#00ff00', '#000000'),
+            ('W/Bl', '#ffffff', '#003366'),
+            ('W/G', '#ffffff', '#006644'),
+            ('Bl/Y', '#003399', '#ffff00'),
         ]
         self.current_scheme = 0
         self.current_mode = CONFIG.get('speech_mode', 'offline')
@@ -1394,12 +1411,12 @@ class CaptionView(QWidget):
         top_bar = QHBoxLayout()
 
         self.size_buttons = {}
-        for size in ['S', 'M', 'L']:
-            btn = QLabel(size)
+        for symbol, action in [('−', self.decrease_size), ('0', self.reset_size), ('+', self.increase_size)]:
+            btn = QLabel(symbol)
             btn.setFixedSize(50, 50)
             btn.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            btn.mousePressEvent = lambda e, s=size: self.set_size(s)
-            self.size_buttons[size] = btn
+            btn.mousePressEvent = lambda e, fn=action: fn()
+            self.size_buttons[symbol] = btn
             top_bar.addWidget(btn)
 
         spacer = QLabel('  ')
@@ -1423,6 +1440,16 @@ class CaptionView(QWidget):
         self.phone_icon.hide()
         top_bar.addWidget(self.phone_icon)
 
+        self.pause_btn = QLabel('⏸')
+        self.pause_btn.setFixedSize(60, 50)
+        self.pause_btn.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.pause_btn.setStyleSheet(
+            'background: #004400; color: #00ff00; border-radius: 10px; '
+            'font-size: 28px; border: 3px solid #00ff00;'
+        )
+        self.pause_btn.mousePressEvent = self.toggle_pause
+        top_bar.addWidget(self.pause_btn)
+
         self.mode_btn = QLabel('OFFLINE')
         self.mode_btn.setFixedSize(140, 50)
         self.mode_btn.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1441,7 +1468,7 @@ class CaptionView(QWidget):
         self.text.setStyleSheet('background: black; color: white; border: none;')
         self.text.verticalScrollBar().setStyleSheet(
             'QScrollBar:vertical { background: #222; width: 30px; border-radius: 15px; }'
-            'QScrollBar::handle:vertical { background: #666; min-height: 60px; border-radius: 15px; }'
+            'QScrollBar::handle:vertical { background: #aaa; min-height: 60px; border-radius: 15px; }'
             'QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }'
         )
         self.text.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
@@ -1450,7 +1477,7 @@ class CaptionView(QWidget):
 
         self.update_size_buttons()
         self.update_color_buttons()
-        self.set_size('M')
+        self.apply_font_size()
         self.set_color(0)
         self._waiting_for_ready = False
         self._last_text_time = 0
@@ -1467,6 +1494,26 @@ class CaptionView(QWidget):
         self.current_mode = new_mode
         self._waiting_for_ready = True
         switch_mode(new_mode)
+
+    def toggle_pause(self, event):
+        if state.user_paused:
+            # Resume
+            state.user_paused = False
+            self.pause_btn.setText('⏸')
+            self.pause_btn.setStyleSheet(
+                'background: #004400; color: #00ff00; border-radius: 10px; '
+                'font-size: 28px; border: 3px solid #00ff00;'
+            )
+            start_transcription(self.current_mode)
+        else:
+            # Pause
+            state.user_paused = True
+            self.pause_btn.setText('▶')
+            self.pause_btn.setStyleSheet(
+                'background: #440000; color: #ff4444; border-radius: 10px; '
+                'font-size: 28px; border: 3px solid #ff4444;'
+            )
+            stop_transcription()
 
     def update_mode_button(self):
         if self.current_mode == 'online':
@@ -1486,10 +1533,21 @@ class CaptionView(QWidget):
         self.current_mode = mode
         self.update_mode_button()
 
-    def set_size(self, size):
-        self.current_size = size
-        self.text.setFont(QFont('Helvetica', self.font_sizes[size], QFont.Weight.Bold))
+    def apply_font_size(self):
+        self.text.setFont(QFont('Helvetica', self.font_size, QFont.Weight.Bold))
         self.update_size_buttons()
+
+    def increase_size(self):
+        self.font_size = min(self.font_size_max, self.font_size + self.font_size_step)
+        self.apply_font_size()
+
+    def decrease_size(self):
+        self.font_size = max(self.font_size_min, self.font_size - self.font_size_step)
+        self.apply_font_size()
+
+    def reset_size(self):
+        self.font_size = self.font_size_default
+        self.apply_font_size()
 
     def set_color(self, idx):
         self.current_scheme = idx
@@ -1499,9 +1557,13 @@ class CaptionView(QWidget):
         self.update_color_buttons()
 
     def update_size_buttons(self):
-        for size, btn in self.size_buttons.items():
-            if size == self.current_size:
+        for symbol, btn in self.size_buttons.items():
+            if symbol == '0' and self.font_size == self.font_size_default:
                 btn.setStyleSheet('background: #444; color: white; border-radius: 25px; font-size: 24px; font-weight: bold;')
+            elif symbol == '−' and self.font_size <= self.font_size_min:
+                btn.setStyleSheet('background: #222; color: #444; border-radius: 25px; font-size: 24px;')
+            elif symbol == '+' and self.font_size >= self.font_size_max:
+                btn.setStyleSheet('background: #222; color: #444; border-radius: 25px; font-size: 24px;')
             else:
                 btn.setStyleSheet('background: #222; color: #888; border-radius: 25px; font-size: 24px;')
 
@@ -1623,7 +1685,7 @@ class MainWindow(QMainWindow):
 
     def health_check(self):
         """Monitor transcription health and restart if needed"""
-        if state.is_restarting() or state.is_stopped():
+        if state.is_restarting() or state.is_stopped() or state.user_paused:
             return
 
         problem = None

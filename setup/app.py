@@ -138,6 +138,7 @@ def api_save():
         'speech_mode': data.get('speech_mode', 'online'),
         'stt_provider': data.get('stt_provider', 'deepgram'),
         'offline_model': data.get('offline_model', 'faster-whisper'),
+        'whisper_model': data.get('whisper_model', 'small.en'),
         'deepgram_key': data.get('deepgram_key', ''),
         'assemblyai_key': data.get('assemblyai_key', ''),
         'azure_key': data.get('azure_key', ''),
