@@ -122,6 +122,9 @@
                             <option value="openai">OpenAI Whisper</option>
                             <option value="google">Google Cloud Speech</option>
                         </optgroup>
+                        <optgroup label="Your own server on the local network">
+                            <option value="lan">LAN Server (self-hosted, no internet needed)</option>
+                        </optgroup>
                     </select>
                     <p class="help">The top group shows words as you speak them — great for live conversation. The bottom group is a few seconds behind but still works well.</p>
                 </div>
@@ -253,6 +256,37 @@
                     <div class="field-group">
                         <label for="google-key">Your Google Cloud API key</label>
                         <input type="text" id="google-key" placeholder="Paste your key here" autocomplete="off" spellcheck="false">
+                    </div>
+                </div>
+
+                <!-- LAN Server -->
+                <div id="provider-lan" class="provider-instructions" style="display:none">
+                    <div class="callout">
+                        <h3>Use your own server on the local network</h3>
+                        <p class="muted">Run a Whisper server on a powerful computer on your network. The Raspberry Pi sends audio to it for transcription — no internet required, no API keys, no usage limits.</p>
+                        <p>You'll need a computer running <strong>faster-whisper-server</strong> in Docker. A machine with an NVIDIA GPU works best.</p>
+                        <details>
+                            <summary>How to set up the server</summary>
+                            <ol class="simple-steps">
+                                <li>On your server, install Docker and the NVIDIA Container Toolkit</li>
+                                <li>Run: <code>docker run -d --gpus all -p 8000:8000 fedirz/faster-whisper-server</code></li>
+                                <li>Enter the server address below, e.g. <code>http://192.168.1.37:8000</code></li>
+                            </ol>
+                        </details>
+                    </div>
+                    <div class="field-group">
+                        <label for="lan-url">Server address</label>
+                        <input type="text" id="lan-url" placeholder="e.g. http://192.168.1.37:8000" autocomplete="off" spellcheck="false">
+                    </div>
+                    <div class="field-group">
+                        <label for="lan-model">Whisper model</label>
+                        <p class="help">Larger models are more accurate but need more GPU memory. If unsure, leave the default.</p>
+                        <select id="lan-model" class="device-select">
+                            <option value="Systran/faster-whisper-tiny.en">tiny.en (fastest, ~1GB VRAM)</option>
+                            <option value="Systran/faster-whisper-small.en" selected>small.en (good balance, ~2GB VRAM)</option>
+                            <option value="Systran/faster-whisper-medium.en">medium.en (more accurate, ~5GB VRAM)</option>
+                            <option value="Systran/faster-whisper-large-v3">large-v3 (most accurate, ~10GB VRAM)</option>
+                        </select>
                     </div>
                 </div>
             </div>
@@ -440,7 +474,7 @@
         }
 
         // ─── Provider picker (switches instructions + key field) ─
-        const providers = ['deepgram', 'assemblyai', 'azure', 'groq', 'interfaze', 'openai', 'google'];
+        const providers = ['deepgram', 'assemblyai', 'azure', 'groq', 'interfaze', 'openai', 'google', 'lan'];
         const providerNames = {
             deepgram: 'Deepgram',
             assemblyai: 'AssemblyAI',
@@ -449,6 +483,7 @@
             interfaze: 'Interfaze',
             openai: 'OpenAI Whisper',
             google: 'Google Cloud',
+            lan: 'LAN Server',
         };
         const offlineModelNames = {
             'faster-whisper': 'Faster Whisper',
@@ -533,6 +568,8 @@
                 interfaze_key: provider === 'interfaze' ? apiKey : '',
                 openai_key: provider === 'openai' ? apiKey : '',
                 google_key: provider === 'google' ? apiKey : '',
+                lan_url: provider === 'lan' ? document.getElementById('lan-url').value.trim() : '',
+                lan_model: provider === 'lan' ? document.getElementById('lan-model').value : '',
                 gateway_ip: document.getElementById('gateway-ip').value.trim(),
             };
 
@@ -633,6 +670,13 @@
                 }
             }
 
+            if (config.lan_url) {
+                document.getElementById('lan-url').value = config.lan_url;
+            }
+            if (config.lan_model) {
+                const lanModelSel = document.getElementById('lan-model');
+                if (lanModelSel) lanModelSel.value = config.lan_model;
+            }
             if (config.gateway_ip) {
                 document.getElementById('gateway-ip').value = config.gateway_ip;
             }

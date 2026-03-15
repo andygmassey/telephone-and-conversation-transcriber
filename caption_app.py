@@ -1212,6 +1212,33 @@ def groq_thread():
     _chunked_api_thread('Groq', transcribe)
 
 
+def lan_thread():
+    """LAN Server STT (chunked, OpenAI-compatible) — self-hosted faster-whisper-server"""
+    lan_url = CONFIG.get('lan_url', '').rstrip('/')
+    if not lan_url:
+        print('No LAN server URL configured', flush=True)
+        emitter.status_changed.emit('no-key')
+        state.thread_alive = False
+        emitter.thread_died.emit('online')
+        return
+
+    lan_model = CONFIG.get('lan_model', 'Systran/faster-whisper-small.en')
+    import requests
+
+    def transcribe(audio_bytes, sample_rate):
+        wav_data = _make_wav(audio_bytes, sample_rate)
+        resp = requests.post(
+            f'{lan_url}/v1/audio/transcriptions',
+            files={'file': ('chunk.wav', wav_data, 'audio/wav')},
+            data={'model': lan_model, 'language': 'en'},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json().get('text', '')
+
+    _chunked_api_thread('LAN', transcribe)
+
+
 def interfaze_thread():
     """Interfaze STT API (chunked, OpenAI-compatible)"""
     api_key = CONFIG.get('interfaze_key')
@@ -1264,6 +1291,7 @@ def start_transcription(mode):
             'interfaze': interfaze_thread,
             'openai': openai_thread,
             'google': google_thread,
+            'lan': lan_thread,
         }
         target = provider_threads.get(provider, deepgram_thread)
         print(f'Starting online transcription with {provider}', flush=True)

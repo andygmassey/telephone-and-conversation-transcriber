@@ -26,6 +26,9 @@ Thumbs.db
 # Local config
 .asoundrc
 
+# Infrastructure docs (contain IPs, credentials, hardware details)
+docs/infrastructure/
+
 # Claude
 CLAUDE.md
 .claude/

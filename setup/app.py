@@ -147,6 +147,8 @@ def api_save():
         'interfaze_key': data.get('interfaze_key', ''),
         'openai_key': data.get('openai_key', ''),
         'google_key': data.get('google_key', ''),
+        'lan_url': data.get('lan_url', ''),
+        'lan_model': data.get('lan_model', 'Systran/faster-whisper-small.en'),
         'gateway_ip': data.get('gateway_ip', ''),
     }
 
