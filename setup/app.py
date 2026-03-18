@@ -94,6 +94,45 @@ def test_audio_device(hw_id, duration=3, sample_rate=16000):
         return -1
 
 
+def detect_hardware():
+    """Detect hardware capabilities for auto-configuration."""
+    info = {'ram_gb': 0, 'cpu_model': '', 'is_pi': False, 'recommended_model': 'small.en'}
+    try:
+        with open('/proc/meminfo') as f:
+            for line in f:
+                if line.startswith('MemTotal:'):
+                    kb = int(line.split()[1])
+                    info['ram_gb'] = round(kb / 1024 / 1024, 1)
+                    break
+    except Exception:
+        pass
+    try:
+        with open('/proc/cpuinfo') as f:
+            for line in f:
+                if line.startswith('Model') and ':' in line:
+                    info['cpu_model'] = line.split(':', 1)[1].strip()
+                    break
+    except Exception:
+        pass
+    try:
+        with open('/etc/os-release') as f:
+            content = f.read()
+            if 'raspbian' in content.lower() or 'raspberry' in content.lower():
+                info['is_pi'] = True
+    except Exception:
+        pass
+    # Recommend model based on RAM
+    if info['ram_gb'] < 2:
+        info['recommended_model'] = 'tiny.en'
+    elif info['ram_gb'] < 4:
+        info['recommended_model'] = 'tiny.en'
+    elif info['ram_gb'] < 8:
+        info['recommended_model'] = 'small.en'
+    else:
+        info['recommended_model'] = 'medium.en'
+    return info
+
+
 def get_service_status(service_name):
     """Check if a systemd user service is running."""
     try:
@@ -112,6 +151,12 @@ def get_service_status(service_name):
 def index():
     config = load_config()
     return render_template('index.html', config=config)
+
+
+@app.route('/api/hardware')
+def api_hardware():
+    info = detect_hardware()
+    return jsonify(info)
 
 
 @app.route('/api/devices')

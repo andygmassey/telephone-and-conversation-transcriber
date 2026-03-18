@@ -90,7 +90,7 @@
                 </div>
                 <div class="field-group">
                     <label>Which Whisper model size?</label>
-                    <p class="help">Smaller models are faster but less accurate. On a Raspberry Pi, <strong>tiny.en</strong> is recommended for real-time use.</p>
+                    <p class="help" id="model-help">Smaller models are faster but less accurate. On a Raspberry Pi, <strong>tiny.en</strong> is recommended for real-time use.</p>
                     <select id="whisper-model" class="device-select">
                         <option value="tiny.en">tiny.en (fastest — recommended for Raspberry Pi)</option>
                         <option value="base.en">base.en (fast, slightly more accurate)</option>
@@ -98,6 +98,7 @@
                         <option value="medium.en">medium.en (slower, more accurate)</option>
                         <option value="large-v3">large-v3 (slowest, most accurate — needs powerful hardware)</option>
                     </select>
+                    <p class="help" id="hw-recommendation" style="display:none; color: #4a9;"></p>
                 </div>
                 <div class="callout">
                     <p><strong>Faster Whisper</strong> gives the best results without internet. Words appear every few seconds in batches. It's already installed.</p>
@@ -654,6 +655,25 @@
                 const whisperSel = document.getElementById('whisper-model');
                 if (whisperSel) whisperSel.value = config.whisper_model;
             }
+
+            // Auto-detect hardware and recommend model
+            fetch('/api/hardware')
+                .then(r => r.json())
+                .then(hw => {
+                    const hint = document.getElementById('hw-recommendation');
+                    if (hint && hw.ram_gb) {
+                        let msg = 'Detected: ' + (hw.cpu_model || 'unknown') + ', ' + hw.ram_gb + ' GB RAM.';
+                        msg += ' Recommended model: ' + hw.recommended_model;
+                        hint.textContent = msg;
+                        hint.style.display = 'block';
+                        // Auto-select recommended model if no config override
+                        if (!config.whisper_model) {
+                            const whisperSel = document.getElementById('whisper-model');
+                            if (whisperSel) whisperSel.value = hw.recommended_model;
+                        }
+                    }
+                })
+                .catch(() => {});
 
             // Restore speech mode and provider selection
             const offlineModels = ['faster-whisper', 'vosk', 'whisper-cpp'];

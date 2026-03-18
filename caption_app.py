@@ -27,6 +27,15 @@ def load_config():
 
 CONFIG = load_config()
 
+# Debug mode: set via --debug flag or config
+DEBUG = '--debug' in sys.argv or CONFIG.get('debug', False)
+
+def debug_print(*args, **kwargs):
+    """Print only when debug mode is enabled."""
+    if DEBUG:
+        kwargs.setdefault('flush', True)
+        print('[DEBUG]', *args, **kwargs)
+
 # Paths
 VOSK_MODEL = os.path.expanduser('~/vosk-uk')
 FONT_PATH = os.path.expanduser('~/gramps-transcriber/fonts/DSEG14Classic-Bold.ttf')
@@ -1082,11 +1091,15 @@ def _chunked_api_thread(provider_name, transcribe_fn):
                 import numpy as np
                 audio_array = np.frombuffer(audio_chunk, dtype=np.int16).astype(np.float32) / 32768.0
                 energy = np.sqrt(np.mean(audio_array**2))
+                debug_print(f'{provider_name}: chunk {len(audio_chunk)}B, energy={energy:.4f}')
                 if energy < 0.005:
+                    debug_print(f'{provider_name}: skipping silent chunk')
                     continue
 
                 try:
+                    debug_print(f'{provider_name}: sending chunk to API...')
                     text = transcribe_fn(audio_chunk, sample_rate)
+                    debug_print(f'{provider_name}: API returned: {repr(text[:100] if text else "")}')
                     if text and text.strip():
                         text = text.strip()
                         print(f'>>> {text}', flush=True)
@@ -1460,13 +1473,29 @@ class CaptionView(QWidget):
         top_bar = QHBoxLayout()
 
         self.size_buttons = {}
-        for symbol, action in [('−', self.decrease_size), ('0', self.reset_size), ('+', self.increase_size)]:
-            btn = QLabel(symbol)
-            btn.setFixedSize(50, 50)
-            btn.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            btn.mousePressEvent = lambda e, fn=action: fn()
-            self.size_buttons[symbol] = btn
-            top_bar.addWidget(btn)
+        # Small A (decrease)
+        btn_down = QLabel('A')
+        btn_down.setFixedSize(50, 50)
+        btn_down.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        btn_down.mousePressEvent = lambda e: self.decrease_size()
+        self.size_buttons['down'] = btn_down
+        top_bar.addWidget(btn_down)
+
+        # Current size (tap to reset)
+        btn_reset = QLabel(str(self.font_size))
+        btn_reset.setFixedSize(50, 50)
+        btn_reset.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        btn_reset.mousePressEvent = lambda e: self.reset_size()
+        self.size_buttons['reset'] = btn_reset
+        top_bar.addWidget(btn_reset)
+
+        # Big A (increase)
+        btn_up = QLabel('A')
+        btn_up.setFixedSize(50, 50)
+        btn_up.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        btn_up.mousePressEvent = lambda e: self.increase_size()
+        self.size_buttons['up'] = btn_up
+        top_bar.addWidget(btn_up)
 
         spacer = QLabel('  ')
         spacer.setFixedWidth(30)
@@ -1606,15 +1635,19 @@ class CaptionView(QWidget):
         self.update_color_buttons()
 
     def update_size_buttons(self):
-        for symbol, btn in self.size_buttons.items():
-            if symbol == '0' and self.font_size == self.font_size_default:
-                btn.setStyleSheet('background: #444; color: white; border-radius: 25px; font-size: 24px; font-weight: bold;')
-            elif symbol == '−' and self.font_size <= self.font_size_min:
-                btn.setStyleSheet('background: #222; color: #444; border-radius: 25px; font-size: 24px;')
-            elif symbol == '+' and self.font_size >= self.font_size_max:
-                btn.setStyleSheet('background: #222; color: #444; border-radius: 25px; font-size: 24px;')
-            else:
-                btn.setStyleSheet('background: #222; color: #888; border-radius: 25px; font-size: 24px;')
+        # Small A (decrease)
+        dim = self.font_size <= self.font_size_min
+        self.size_buttons['down'].setStyleSheet(
+            f'background: #222; color: {"#444" if dim else "#888"}; border-radius: 25px; font-size: 16px; font-weight: bold;')
+        # Size number (reset)
+        self.size_buttons['reset'].setText(str(self.font_size))
+        at_default = self.font_size == self.font_size_default
+        self.size_buttons['reset'].setStyleSheet(
+            f'background: {"#444" if at_default else "#333"}; color: white; border-radius: 25px; font-size: 18px; font-weight: bold;')
+        # Big A (increase)
+        dim = self.font_size >= self.font_size_max
+        self.size_buttons['up'].setStyleSheet(
+            f'background: #222; color: {"#444" if dim else "#888"}; border-radius: 25px; font-size: 28px; font-weight: bold;')
 
     def update_color_buttons(self):
         for i, btn in enumerate(self.color_buttons):
@@ -1628,7 +1661,10 @@ class CaptionView(QWidget):
         if status == 'switching':
             self.status_label.setText('⏳')
             self.status_label.setStyleSheet('font-size: 30px; background: transparent;')
-        elif status in ('vosk', 'deepgram', 'assemblyai', 'azure', 'google', 'openai', 'groq', 'interfaze', 'whisper', 'faster-whisper'):
+        elif status == 'ready':
+            self.status_label.setText('✅')
+            self.status_label.setStyleSheet('font-size: 30px; background: transparent;')
+        elif status in ('vosk', 'deepgram', 'assemblyai', 'azure', 'google', 'openai', 'groq', 'interfaze', 'whisper', 'faster-whisper', 'lan'):
             self.status_label.setText('🎤')
             self.status_label.setStyleSheet('font-size: 30px; background: transparent;')
         elif status == 'no-key':
@@ -1661,7 +1697,7 @@ class CaptionView(QWidget):
         has_newline = t.endswith('\n')
         t = t.rstrip('\n')
         if self.text.toPlainText():
-            if self._last_text_time > 0 and (now - self._last_text_time) > 2:
+            if self._last_text_time > 0 and (now - self._last_text_time) > 8:
                 c.insertText('\n\n')
             else:
                 c.insertText(' ')
@@ -1734,6 +1770,7 @@ class MainWindow(QMainWindow):
 
     def health_check(self):
         """Monitor transcription health and restart if needed"""
+        debug_print(f'health_check: restarting={state.is_restarting()} stopped={state.is_stopped()} paused={state.user_paused} thread={state.thread_alive} proc={state.proc_alive()} ready={state.provider_ready}')
         if state.is_restarting() or state.is_stopped() or state.user_paused:
             return
 
@@ -1945,6 +1982,7 @@ class MainWindow(QMainWindow):
     def on_mode_ready(self, mode):
         state.provider_ready = True
         self.caption_view.update_mode_button()
+        self.caption_view.set_status('ready')
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key.Key_Escape:
