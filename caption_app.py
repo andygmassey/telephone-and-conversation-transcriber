@@ -249,6 +249,14 @@ class Emitter(QObject):
 emitter = Emitter()
 
 
+def safe_emit(signal, *args):
+    """Emit a Qt signal, ignoring RuntimeError if the emitter has been deleted during shutdown."""
+    try:
+        signal.emit(*args)
+    except RuntimeError:
+        pass
+
+
 
 def write_phone_status(active):
     """Write phone status file"""
@@ -311,7 +319,7 @@ def cleanup_audio_processes():
 def faster_whisper_thread():
     """Run faster-whisper for high quality offline transcription"""
     print('Starting faster-whisper...', flush=True)
-    emitter.status_changed.emit('whisper')
+    safe_emit(emitter.status_changed,'whisper')
     # thread_alive already set by start_transcription
     arecord = None
 
@@ -319,8 +327,16 @@ def faster_whisper_thread():
         from faster_whisper import WhisperModel
         import numpy as np
 
-        # Load model
+        # Load model — guard against models too large for this device
         whisper_model = CONFIG.get('whisper_model', 'small.en')
+        try:
+            import psutil
+            ram_gb = psutil.virtual_memory().total / (1024**3)
+        except ImportError:
+            ram_gb = 4  # Assume Pi-class hardware if psutil not available
+        if ram_gb < 16 and whisper_model in ('large-v3', 'large-v2', 'large'):
+            print(f'Warning: {whisper_model} is too large for this device ({ram_gb:.0f}GB RAM), falling back to small.en', flush=True)
+            whisper_model = 'small.en'
         print(f'Loading Whisper model ({whisper_model})...', flush=True)
         model = WhisperModel(
             whisper_model,
@@ -361,7 +377,7 @@ def faster_whisper_thread():
 
 
         print('faster-whisper ready', flush=True)
-        emitter.mode_ready.emit('offline')
+        safe_emit(emitter.mode_ready,'offline')
 
 
         buffer = b''
@@ -411,7 +427,7 @@ def faster_whisper_thread():
                     if text:
                         print(f'>>> {text}', flush=True)
                         state.mark_success()
-                        emitter.new_text.emit(text)
+                        safe_emit(emitter.new_text,text)
 
     except ImportError as e:
         print(f'faster-whisper not available: {e}', flush=True)
@@ -421,7 +437,7 @@ def faster_whisper_thread():
         return
     except Exception as e:
         print(f'faster-whisper error: {e}', flush=True)
-        emitter.status_changed.emit('error')
+        safe_emit(emitter.status_changed,'error')
         import traceback
         traceback.print_exc()
     finally:
@@ -440,13 +456,13 @@ def faster_whisper_thread():
         print('faster-whisper stopped', flush=True)
 
         if not state.is_stopped():
-            emitter.thread_died.emit('offline')
+            safe_emit(emitter.thread_died,'offline')
 
 
 def vosk_thread():
     """Run Vosk streaming with robust error handling"""
     print('Starting Vosk...', flush=True)
-    emitter.status_changed.emit('vosk')
+    safe_emit(emitter.status_changed,'vosk')
     # thread_alive already set by start_transcription
     arecord = None
 
@@ -490,7 +506,7 @@ def vosk_thread():
             raise RuntimeError("Could not start arecord after 3 attempts")
 
         print('Vosk ready', flush=True)
-        emitter.mode_ready.emit('offline')
+        safe_emit(emitter.mode_ready,'offline')
 
 
         consecutive_empty = 0
@@ -513,17 +529,17 @@ def vosk_thread():
                     if text:
                         print(f'>>> {text}', flush=True)
                         state.mark_success()
-                        emitter.new_text.emit(text)
+                        safe_emit(emitter.new_text,text)
             except Exception as e:
                 print(f"Vosk read error: {e}", flush=True)
                 break
 
     except FileNotFoundError as e:
         print(f'Vosk model error: {e}', flush=True)
-        emitter.status_changed.emit('error')
+        safe_emit(emitter.status_changed,'error')
     except Exception as e:
         print(f'Vosk error: {e}', flush=True)
-        emitter.status_changed.emit('error')
+        safe_emit(emitter.status_changed,'error')
         import traceback
         traceback.print_exc()
     finally:
@@ -543,14 +559,14 @@ def vosk_thread():
 
         # Signal that thread died (for restart logic)
         if not state.is_stopped():
-            emitter.thread_died.emit('offline')
+            safe_emit(emitter.thread_died,'offline')
 
 
 
 def whisper_thread():
     """Run whisper.cpp streaming for better quality offline transcription"""
     print('Starting Whisper.cpp stream...', flush=True)
-    emitter.status_changed.emit('whisper')
+    safe_emit(emitter.status_changed,'whisper')
     # thread_alive already set by start_transcription
     proc = None
 
@@ -590,7 +606,7 @@ def whisper_thread():
         state.set_proc(proc)
 
         print('Whisper ready', flush=True)
-        emitter.mode_ready.emit('offline')
+        safe_emit(emitter.mode_ready,'offline')
 
 
         for line in iter(proc.stdout.readline, ''):
@@ -613,7 +629,7 @@ def whisper_thread():
 
             print(f'>>> {line}', flush=True)
             state.mark_success()
-            emitter.new_text.emit(line)
+            safe_emit(emitter.new_text,line)
 
     except FileNotFoundError as e:
         print(f'Whisper not available: {e}', flush=True)
@@ -623,7 +639,7 @@ def whisper_thread():
         return
     except Exception as e:
         print(f'Whisper error: {e}', flush=True)
-        emitter.status_changed.emit('error')
+        safe_emit(emitter.status_changed,'error')
         import traceback
         traceback.print_exc()
     finally:
@@ -642,20 +658,20 @@ def whisper_thread():
         print('Whisper stopped', flush=True)
 
         if not state.is_stopped():
-            emitter.thread_died.emit('offline')
+            safe_emit(emitter.thread_died,'offline')
 
 
 def deepgram_thread():
     """Run Deepgram streaming with robust error handling"""
     if not DEEPGRAM_KEY:
         print('No Deepgram API key', flush=True)
-        emitter.status_changed.emit('no-key')
+        safe_emit(emitter.status_changed,'no-key')
         state.thread_alive = False
-        emitter.thread_died.emit('online')
+        safe_emit(emitter.thread_died,'online')
         return
 
     print('Starting Deepgram...', flush=True)
-    emitter.status_changed.emit('deepgram')
+    safe_emit(emitter.status_changed,'deepgram')
     # thread_alive already set by start_transcription
     arecord = None
 
@@ -705,7 +721,7 @@ def deepgram_thread():
                             t = t + '\n'
                         print(f'>>> {t.strip()}', flush=True)
                         state.mark_success()
-                        emitter.new_text.emit(t)
+                        safe_emit(emitter.new_text,t)
             except Exception as e:
                 print(f'Parse error: {e}', flush=True)
 
@@ -716,7 +732,7 @@ def deepgram_thread():
         def on_open(ws):
             print('Deepgram connected', flush=True)
             ws_connected.set()
-            emitter.mode_ready.emit('online')
+            safe_emit(emitter.mode_ready,'online')
 
             ws.send(test_data, opcode=2)
 
@@ -760,7 +776,7 @@ def deepgram_thread():
 
     except Exception as e:
         print(f'Deepgram error: {e}', flush=True)
-        emitter.status_changed.emit('error')
+        safe_emit(emitter.status_changed,'error')
         import traceback
         traceback.print_exc()
     finally:
@@ -779,7 +795,7 @@ def deepgram_thread():
         print('Deepgram stopped', flush=True)
 
         if not state.is_stopped():
-            emitter.thread_died.emit('online')
+            safe_emit(emitter.thread_died,'online')
 
 
 def assemblyai_thread():
@@ -787,13 +803,13 @@ def assemblyai_thread():
     api_key = CONFIG.get('assemblyai_key')
     if not api_key:
         print('No AssemblyAI API key', flush=True)
-        emitter.status_changed.emit('no-key')
+        safe_emit(emitter.status_changed,'no-key')
         state.thread_alive = False
-        emitter.thread_died.emit('online')
+        safe_emit(emitter.thread_died,'online')
         return
 
     print('Starting AssemblyAI...', flush=True)
-    emitter.status_changed.emit('assemblyai')
+    safe_emit(emitter.status_changed,'assemblyai')
     # thread_alive already set by start_transcription
     arecord = None
 
@@ -838,7 +854,7 @@ def assemblyai_thread():
                     if text:
                         print(f'>>> {text}', flush=True)
                         state.mark_success()
-                        emitter.new_text.emit(text + '\n')
+                        safe_emit(emitter.new_text,text + '\n')
                 elif data.get('message_type') == 'PartialTranscript':
                     text = data.get('text', '').strip()
                     if text:
@@ -852,7 +868,7 @@ def assemblyai_thread():
 
         def on_open(ws):
             print('AssemblyAI connected', flush=True)
-            emitter.mode_ready.emit('online')
+            safe_emit(emitter.mode_ready,'online')
 
 
             # Send initial audio
@@ -897,7 +913,7 @@ def assemblyai_thread():
 
     except Exception as e:
         print(f'AssemblyAI error: {e}', flush=True)
-        emitter.status_changed.emit('error')
+        safe_emit(emitter.status_changed,'error')
         import traceback
         traceback.print_exc()
     finally:
@@ -915,7 +931,7 @@ def assemblyai_thread():
         state.kill_proc()
         print('AssemblyAI stopped', flush=True)
         if not state.is_stopped():
-            emitter.thread_died.emit('online')
+            safe_emit(emitter.thread_died,'online')
 
 
 def azure_thread():
@@ -924,13 +940,13 @@ def azure_thread():
     region = CONFIG.get('azure_region', 'uksouth')
     if not api_key:
         print('No Azure API key', flush=True)
-        emitter.status_changed.emit('no-key')
+        safe_emit(emitter.status_changed,'no-key')
         state.thread_alive = False
-        emitter.thread_died.emit('online')
+        safe_emit(emitter.thread_died,'online')
         return
 
     print('Starting Azure Speech...', flush=True)
-    emitter.status_changed.emit('azure')
+    safe_emit(emitter.status_changed,'azure')
     # thread_alive already set by start_transcription
 
     try:
@@ -953,7 +969,7 @@ def azure_thread():
             if text:
                 print(f'>>> {text}', flush=True)
                 state.mark_success()
-                emitter.new_text.emit(text + '\n')
+                safe_emit(emitter.new_text,text + '\n')
 
         def on_recognizing(evt):
             if evt.result.text.strip():
@@ -966,7 +982,7 @@ def azure_thread():
 
         def on_session_started(evt):
             print('Azure session started', flush=True)
-            emitter.mode_ready.emit('online')
+            safe_emit(emitter.mode_ready,'online')
 
 
         recognizer.recognized.connect(on_recognized)
@@ -986,10 +1002,10 @@ def azure_thread():
 
     except ImportError:
         print('Azure Speech SDK not installed. Install with: pip install azure-cognitiveservices-speech', flush=True)
-        emitter.status_changed.emit('error')
+        safe_emit(emitter.status_changed,'error')
     except Exception as e:
         print(f'Azure error: {e}', flush=True)
-        emitter.status_changed.emit('error')
+        safe_emit(emitter.status_changed,'error')
         import traceback
         traceback.print_exc()
     finally:
@@ -997,7 +1013,7 @@ def azure_thread():
         state.kill_proc()
         print('Azure stopped', flush=True)
         if not state.is_stopped():
-            emitter.thread_died.emit('online')
+            safe_emit(emitter.thread_died,'online')
 
 
 def _chunked_api_thread(provider_name, transcribe_fn):
@@ -1007,7 +1023,7 @@ def _chunked_api_thread(provider_name, transcribe_fn):
     which should return the transcribed text or empty string.
     """
     print(f'Starting {provider_name}...', flush=True)
-    emitter.status_changed.emit(provider_name.lower())
+    safe_emit(emitter.status_changed,provider_name.lower())
     # thread_alive already set by start_transcription
     arecord = None
 
@@ -1037,8 +1053,12 @@ def _chunked_api_thread(provider_name, transcribe_fn):
         if not arecord:
             raise RuntimeError('Could not start arecord after 4 attempts')
 
-        emitter.mode_ready.emit('online')
+        safe_emit(emitter.mode_ready,'online')
 
+        # Overlap: keep last 0.5s of each chunk and prepend to next
+        # This gives the model context at chunk boundaries to avoid splitting words
+        overlap_bytes = sample_rate * 2 // 2  # 0.5 seconds of 16-bit mono
+        prev_tail = b''
 
         buffer = b''
         while not state.is_stopped():
@@ -1054,7 +1074,8 @@ def _chunked_api_thread(provider_name, transcribe_fn):
             buffer += data
 
             if len(buffer) >= chunk_bytes:
-                audio_chunk = buffer[:chunk_bytes]
+                audio_chunk = prev_tail + buffer[:chunk_bytes]
+                prev_tail = buffer[chunk_bytes - overlap_bytes:chunk_bytes]
                 buffer = buffer[chunk_bytes:]
 
                 # Skip silent chunks to avoid wasting API calls
@@ -1070,13 +1091,13 @@ def _chunked_api_thread(provider_name, transcribe_fn):
                         text = text.strip()
                         print(f'>>> {text}', flush=True)
                         state.mark_success()
-                        emitter.new_text.emit(text + '\n')
+                        safe_emit(emitter.new_text,text + '\n')
                 except Exception as e:
                     print(f'{provider_name} API error: {e}', flush=True)
 
     except Exception as e:
         print(f'{provider_name} error: {e}', flush=True)
-        emitter.status_changed.emit('error')
+        safe_emit(emitter.status_changed,'error')
         import traceback
         traceback.print_exc()
     finally:
@@ -1094,7 +1115,7 @@ def _chunked_api_thread(provider_name, transcribe_fn):
         state.kill_proc()
         print(f'{provider_name} stopped', flush=True)
         if not state.is_stopped():
-            emitter.thread_died.emit('online')
+            safe_emit(emitter.thread_died, 'online')
 
 
 def _make_wav(raw_audio, sample_rate):
@@ -1124,9 +1145,9 @@ def google_thread():
     api_key = CONFIG.get('google_key')
     if not api_key:
         print('No Google Cloud API key', flush=True)
-        emitter.status_changed.emit('no-key')
+        safe_emit(emitter.status_changed,'no-key')
         state.thread_alive = False
-        emitter.thread_died.emit('online')
+        safe_emit(emitter.thread_died,'online')
         return
 
     import requests
@@ -1163,9 +1184,9 @@ def openai_thread():
     api_key = CONFIG.get('openai_key')
     if not api_key:
         print('No OpenAI API key', flush=True)
-        emitter.status_changed.emit('no-key')
+        safe_emit(emitter.status_changed,'no-key')
         state.thread_alive = False
-        emitter.thread_died.emit('online')
+        safe_emit(emitter.thread_died,'online')
         return
 
     import requests
@@ -1190,9 +1211,9 @@ def groq_thread():
     api_key = CONFIG.get('groq_key')
     if not api_key:
         print('No Groq API key', flush=True)
-        emitter.status_changed.emit('no-key')
+        safe_emit(emitter.status_changed,'no-key')
         state.thread_alive = False
-        emitter.thread_died.emit('online')
+        safe_emit(emitter.thread_died,'online')
         return
 
     import requests
@@ -1217,9 +1238,9 @@ def lan_thread():
     lan_url = CONFIG.get('lan_url', '').rstrip('/')
     if not lan_url:
         print('No LAN server URL configured', flush=True)
-        emitter.status_changed.emit('no-key')
+        safe_emit(emitter.status_changed,'no-key')
         state.thread_alive = False
-        emitter.thread_died.emit('online')
+        safe_emit(emitter.thread_died,'online')
         return
 
     lan_model = CONFIG.get('lan_model', 'Systran/faster-whisper-small.en')
@@ -1244,9 +1265,9 @@ def interfaze_thread():
     api_key = CONFIG.get('interfaze_key')
     if not api_key:
         print('No Interfaze API key', flush=True)
-        emitter.status_changed.emit('no-key')
+        safe_emit(emitter.status_changed,'no-key')
         state.thread_alive = False
-        emitter.thread_died.emit('online')
+        safe_emit(emitter.thread_died,'online')
         return
 
     import requests
@@ -1321,11 +1342,11 @@ def switch_mode(new_mode):
     """Switch modes with proper cleanup"""
     if new_mode != state.mode:
         print(f'Switching from {state.mode} to {new_mode}', flush=True)
-        emitter.status_changed.emit('switching')
+        safe_emit(emitter.status_changed,'switching')
         stop_transcription()
         time.sleep(0.5)
         start_transcription(new_mode)
-        emitter.mode_changed.emit(new_mode)
+        safe_emit(emitter.mode_changed,new_mode)
 
 
 class FlipFlap(QWidget):
