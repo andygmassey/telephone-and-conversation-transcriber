@@ -202,6 +202,9 @@ fi
 
 systemctl --user daemon-reload || fail "Couldn't reload systemd. Make sure you're running this from an interactive SSH login or desktop session."
 
+# Enable lingering so user services start at boot without requiring login
+loginctl enable-linger 2>/dev/null || warn "Couldn't enable lingering (services may not auto-start after reboot)"
+
 ok "Services installed"
 
 # ─── Step 8: Start the setup wizard ──────────────────────────────────────────

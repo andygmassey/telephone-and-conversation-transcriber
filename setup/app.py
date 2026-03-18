@@ -205,11 +205,20 @@ def api_save():
     elif config.get('azure_key'):
         save_credentials(azure_key=config['azure_key'], azure_region=config['azure_region'])
 
-    # Restart the caption service so it picks up new config
+    # Enable and restart the caption service so it starts on boot and picks up new config
     try:
         subprocess.run(
-            ['systemctl', '--user', 'restart', 'caption'],
+            ['systemctl', '--user', 'enable', '--now', 'caption'],
             capture_output=True, timeout=10
+        )
+    except Exception:
+        pass
+
+    # Enable lingering so user services start at boot without login
+    try:
+        subprocess.run(
+            ['loginctl', 'enable-linger'],
+            capture_output=True, timeout=5
         )
     except Exception:
         pass

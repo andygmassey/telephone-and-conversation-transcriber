@@ -5,7 +5,7 @@ StartLimitIntervalSec=300
 StartLimitBurst=10
 
 [Service]
-Type=notify
+Type=simple
 Environment=DISPLAY=:0
 Environment=WAYLAND_DISPLAY=wayland-0
 Environment=XDG_RUNTIME_DIR=/run/user/1000

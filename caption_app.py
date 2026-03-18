@@ -1497,9 +1497,7 @@ class CaptionView(QWidget):
         self.size_buttons['up'] = btn_up
         top_bar.addWidget(btn_up)
 
-        spacer = QLabel('  ')
-        spacer.setFixedWidth(30)
-        top_bar.addWidget(spacer)
+        top_bar.addSpacing(30)
 
         self.color_buttons = []
         for i, (name, text_col, bg_col) in enumerate(self.color_schemes):
@@ -1518,7 +1516,7 @@ class CaptionView(QWidget):
         self.phone_icon.hide()
         top_bar.addWidget(self.phone_icon)
 
-        self.pause_btn = QLabel('⏸')
+        self.pause_btn = QLabel('🎙')
         self.pause_btn.setFixedSize(60, 50)
         self.pause_btn.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.pause_btn.setStyleSheet(
@@ -1577,7 +1575,7 @@ class CaptionView(QWidget):
         if state.user_paused:
             # Resume
             state.user_paused = False
-            self.pause_btn.setText('⏸')
+            self.pause_btn.setText('🎙')
             self.pause_btn.setStyleSheet(
                 'background: #004400; color: #00ff00; border-radius: 10px; '
                 'font-size: 28px; border: 3px solid #00ff00;'
@@ -1586,7 +1584,7 @@ class CaptionView(QWidget):
         else:
             # Pause
             state.user_paused = True
-            self.pause_btn.setText('▶')
+            self.pause_btn.setText('🚫')
             self.pause_btn.setStyleSheet(
                 'background: #440000; color: #ff4444; border-radius: 10px; '
                 'font-size: 28px; border: 3px solid #ff4444;'
