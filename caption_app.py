@@ -305,12 +305,21 @@ def get_audio_device():
 
 
 def ensure_mic_volume():
-    """Ensure microphone volume is set correctly"""
+    """Ensure microphone volume is set correctly, using calibrated level if available."""
     try:
-        # Try multiple cards
-        for card in range(3):
-            subprocess.run(['amixer', '-c', str(card), 'set', 'Mic', '100%'],
+        mic_gain = CONFIG.get('mic_gain')
+        mic_card = CONFIG.get('mic_gain_card')
+        mic_control = CONFIG.get('mic_gain_control')
+        if mic_gain is not None and mic_control:
+            # Use calibrated gain
+            subprocess.run(['amixer', '-c', str(mic_card), 'sset', mic_control, f'{mic_gain}%'],
                          capture_output=True, timeout=5)
+            debug_print(f'Set mic gain to calibrated {mic_gain}% on card {mic_card} control {mic_control}')
+        else:
+            # Default: try to set capture to 100% on all cards
+            for card in range(3):
+                subprocess.run(['amixer', '-c', str(card), 'set', 'Capture', '100%'],
+                             capture_output=True, timeout=5)
     except:
         pass
 

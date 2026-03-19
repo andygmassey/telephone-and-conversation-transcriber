@@ -37,6 +37,7 @@
                         <option value="">-- Choose one --</option>
                     </select>
                     <button class="btn-test" onclick="testDevice('room-device')">Test it</button>
+                    <button class="btn-test" onclick="calibrateDevice('room-device')">Auto-calibrate</button>
                     <div id="room-device-result" class="test-result"></div>
                 </div>
 
@@ -278,12 +279,15 @@
                     <div class="field-group">
                         <label for="lan-url">Server address</label>
                         <input type="text" id="lan-url" placeholder="e.g. http://192.168.1.37:8000" autocomplete="off" spellcheck="false">
+                        <button class="btn-test" onclick="probeLanServer()">Test connection</button>
+                        <div id="lan-probe-result" class="test-result"></div>
                     </div>
                     <div class="field-group">
                         <label for="lan-model">Whisper model</label>
-                        <p class="help">Larger models are more accurate but need more GPU memory. If unsure, leave the default.</p>
+                        <p class="help">Larger models are more accurate but need more GPU memory. Guide: RTX 3050/4060 (8GB) - use small or base. RTX 3060 (12GB) - use medium. RTX 3090/4090 (24GB) - use large-v3.</p>
                         <select id="lan-model" class="device-select">
                             <option value="Systran/faster-whisper-tiny.en">tiny.en (fastest, ~1GB VRAM)</option>
+                            <option value="Systran/faster-whisper-base.en">base.en (fast, ~1GB VRAM)</option>
                             <option value="Systran/faster-whisper-small.en" selected>small.en (good balance, ~2GB VRAM)</option>
                             <option value="Systran/faster-whisper-medium.en">medium.en (more accurate, ~5GB VRAM)</option>
                             <option value="Systran/faster-whisper-large-v3">large-v3 (most accurate, ~10GB VRAM)</option>
@@ -457,6 +461,78 @@
             })
             .catch(() => {
                 resultDiv.textContent = 'Something went wrong. Try again.';
+                resultDiv.className = 'test-result error';
+            });
+        }
+
+        // ─── Mic calibration ──────────────────────────────────
+        function calibrateDevice(selectId) {
+            const sel = document.getElementById(selectId);
+            const resultDiv = document.getElementById(selectId + '-result');
+            const hwId = sel.value;
+            const card = sel.options[sel.selectedIndex]?.dataset?.card || '0';
+
+            if (!hwId) {
+                resultDiv.textContent = 'Pick a microphone first.';
+                resultDiv.className = 'test-result warn';
+                return;
+            }
+
+            resultDiv.textContent = 'Calibrating... please stay quiet for about 30 seconds.';
+            resultDiv.className = 'test-result listening';
+
+            fetch('/api/calibrate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({hw_id: hwId, card: parseInt(hwId.replace('hw:', '').split(',')[0])})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.ok) {
+                    resultDiv.textContent = 'Calibrated! Mic gain set to ' + data.final_level + '% (noise level: ' + data.final_energy + ').';
+                    resultDiv.className = 'test-result good';
+                } else {
+                    resultDiv.textContent = 'Calibration issue: ' + (data.error || 'unknown error') + '. You can adjust manually with alsamixer.';
+                    resultDiv.className = 'test-result warn';
+                }
+            })
+            .catch(() => {
+                resultDiv.textContent = 'Something went wrong. Try again.';
+                resultDiv.className = 'test-result error';
+            });
+        }
+
+        // ─── LAN server probe ─────────────────────────────────
+        function probeLanServer() {
+            const url = document.getElementById('lan-url').value.trim();
+            const resultDiv = document.getElementById('lan-probe-result');
+
+            if (!url) {
+                resultDiv.textContent = 'Enter a server address first.';
+                resultDiv.className = 'test-result warn';
+                return;
+            }
+
+            resultDiv.textContent = 'Testing connection...';
+            resultDiv.className = 'test-result listening';
+
+            fetch('/api/probe-lan', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({url: url})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.ok) {
+                    resultDiv.textContent = 'Connected! Server is running and ready.';
+                    resultDiv.className = 'test-result good';
+                } else {
+                    resultDiv.textContent = data.error || 'Could not connect to server.';
+                    resultDiv.className = 'test-result error';
+                }
+            })
+            .catch(() => {
+                resultDiv.textContent = 'Something went wrong. Check the address and try again.';
                 resultDiv.className = 'test-result error';
             });
         }

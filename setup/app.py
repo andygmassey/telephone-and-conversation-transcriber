@@ -94,6 +94,88 @@ def test_audio_device(hw_id, duration=3, sample_rate=16000):
         return -1
 
 
+def find_capture_control(card):
+    """Find the ALSA capture volume control name for a given card."""
+    try:
+        result = subprocess.run(
+            ['amixer', '-c', str(card), 'scontrols'],
+            capture_output=True, text=True, timeout=5
+        )
+        for name in ['Capture', 'Mic', 'Digital', 'Internal Mic', 'Headset']:
+            if f"'{name}'" in result.stdout:
+                return name
+    except Exception:
+        pass
+    return None
+
+
+def get_capture_level(card, control):
+    """Get current capture level (0-100) for a card/control."""
+    try:
+        result = subprocess.run(
+            ['amixer', '-c', str(card), 'sget', control],
+            capture_output=True, text=True, timeout=5
+        )
+        match = re.search(r'\[(\d+)%\]', result.stdout)
+        if match:
+            return int(match.group(1))
+    except Exception:
+        pass
+    return -1
+
+
+def set_capture_level(card, control, level):
+    """Set capture level (0-100) for a card/control."""
+    try:
+        subprocess.run(
+            ['amixer', '-c', str(card), 'sset', control, f'{level}%'],
+            capture_output=True, timeout=5
+        )
+        return True
+    except Exception:
+        return False
+
+
+def calibrate_mic(hw_id, card, target_silence=2, duration=3, sample_rate=16000):
+    """Auto-calibrate mic gain by reducing until silence reads below target energy.
+
+    Returns dict with final_level, final_energy, steps taken.
+    """
+    control = find_capture_control(card)
+    if not control:
+        return {'ok': False, 'error': 'No capture control found for this device'}
+
+    current_level = get_capture_level(card, control)
+    if current_level < 0:
+        return {'ok': False, 'error': 'Could not read current capture level'}
+
+    steps = []
+    # Start from current level and reduce until silence is quiet enough
+    for attempt in range(10):
+        energy = test_audio_device(hw_id, duration=duration, sample_rate=sample_rate)
+        steps.append({'level': current_level, 'energy': energy})
+
+        if energy <= target_silence:
+            # Save to config
+            config = load_config()
+            config['mic_gain'] = current_level
+            config['mic_gain_card'] = card
+            config['mic_gain_control'] = control
+            save_config(config)
+            return {'ok': True, 'final_level': current_level, 'final_energy': energy, 'steps': steps}
+
+        if current_level <= 10:
+            # Don't go below 10%
+            break
+
+        # Reduce by 10%
+        current_level = max(10, current_level - 10)
+        set_capture_level(card, control, current_level)
+        time.sleep(0.5)
+
+    return {'ok': False, 'error': f'Could not get silence below threshold (energy={energy} at {current_level}%)', 'steps': steps}
+
+
 def detect_hardware():
     """Detect hardware capabilities for auto-configuration."""
     info = {'ram_gb': 0, 'cpu_model': '', 'is_pi': False, 'recommended_model': 'small.en'}
@@ -157,6 +239,49 @@ def index():
 def api_hardware():
     info = detect_hardware()
     return jsonify(info)
+
+
+@app.route('/api/probe-lan', methods=['POST'])
+def api_probe_lan():
+    """Probe a LAN server URL to check if it's running and get available models."""
+    import requests as req
+    data = request.get_json() or {}
+    url = data.get('url', '').rstrip('/')
+    if not url:
+        return jsonify({'ok': False, 'error': 'No URL provided'})
+
+    result = {'ok': False, 'url': url}
+    try:
+        # Check health
+        health = req.get(f'{url}/health', timeout=5)
+        result['healthy'] = health.status_code == 200
+
+        # Try to get available models
+        try:
+            models = req.get(f'{url}/v1/models', timeout=5)
+            if models.status_code == 200:
+                result['models'] = models.json()
+        except Exception:
+            pass
+
+        result['ok'] = result.get('healthy', False)
+    except req.ConnectionError:
+        result['error'] = 'Could not connect. Is the server running?'
+    except req.Timeout:
+        result['error'] = 'Connection timed out'
+    except Exception as e:
+        result['error'] = str(e)
+
+    return jsonify(result)
+
+
+@app.route('/api/calibrate', methods=['POST'])
+def api_calibrate():
+    data = request.get_json() or {}
+    hw_id = data.get('hw_id', 'hw:0,0')
+    card = data.get('card', 0)
+    result = calibrate_mic(hw_id, card)
+    return jsonify(result)
 
 
 @app.route('/api/devices')

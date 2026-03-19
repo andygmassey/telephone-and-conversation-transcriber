@@ -207,6 +207,25 @@ loginctl enable-linger 2>/dev/null || warn "Couldn't enable lingering (services 
 
 ok "Services installed"
 
+# Create desktop shortcut for starting captions
+DESKTOP_DIR="$HOME/Desktop"
+if [ -d "$DESKTOP_DIR" ]; then
+    cat > "$DESKTOP_DIR/Gramps Captions.desktop" << 'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=Gramps Captions
+Comment=Start live captions
+Exec=bash -c 'systemctl --user restart caption'
+Icon=audio-input-microphone
+Terminal=false
+Categories=Accessibility;
+DESKTOP
+    chmod +x "$DESKTOP_DIR/Gramps Captions.desktop" 2>/dev/null
+    ok "Desktop shortcut created"
+else
+    warn "No desktop folder found — skipping shortcut"
+fi
+
 # ─── Step 8: Start the setup wizard ──────────────────────────────────────────
 
 step 8 "Starting the setup wizard..."
