@@ -179,7 +179,12 @@ def calibrate_mic(hw_id, card, target_silence=2, duration=3, sample_rate=16000):
 
 def detect_hardware():
     """Detect hardware capabilities for auto-configuration."""
-    info = {'ram_gb': 0, 'cpu_model': '', 'is_pi': False, 'recommended_model': 'small.en'}
+    # Check configured language to recommend .en or multilingual models
+    config = load_config()
+    lang = config.get('language', 'en')
+    en_suffix = '.en' if lang == 'en' else ''
+
+    info = {'ram_gb': 0, 'cpu_model': '', 'is_pi': False, 'recommended_model': f'small{en_suffix}'}
     try:
         with open('/proc/meminfo') as f:
             for line in f:
@@ -204,15 +209,15 @@ def detect_hardware():
                 info['is_pi'] = True
     except Exception:
         pass
-    # Recommend model based on RAM
+    # Recommend model based on RAM (use .en suffix only for English)
     if info['ram_gb'] < 2:
-        info['recommended_model'] = 'tiny.en'
+        info['recommended_model'] = f'tiny{en_suffix}'
     elif info['ram_gb'] < 4:
-        info['recommended_model'] = 'tiny.en'
+        info['recommended_model'] = f'tiny{en_suffix}'
     elif info['ram_gb'] < 8:
-        info['recommended_model'] = 'small.en'
+        info['recommended_model'] = f'small{en_suffix}'
     else:
-        info['recommended_model'] = 'medium.en'
+        info['recommended_model'] = f'medium{en_suffix}'
     return info
 
 
@@ -309,7 +314,7 @@ def api_save():
         'speech_mode': data.get('speech_mode', 'online'),
         'stt_provider': data.get('stt_provider', 'deepgram'),
         'offline_model': data.get('offline_model', 'faster-whisper'),
-        'whisper_model': data.get('whisper_model', 'small.en'),
+        'whisper_model': data.get('whisper_model', 'small.en' if data.get('language', 'en') == 'en' else 'small'),
         'deepgram_key': data.get('deepgram_key', ''),
         'assemblyai_key': data.get('assemblyai_key', ''),
         'azure_key': data.get('azure_key', ''),
@@ -319,7 +324,7 @@ def api_save():
         'openai_key': data.get('openai_key', ''),
         'google_key': data.get('google_key', ''),
         'lan_url': data.get('lan_url', ''),
-        'lan_model': data.get('lan_model', 'Systran/faster-whisper-small.en'),
+        'lan_model': data.get('lan_model', 'Systran/faster-whisper-small.en' if data.get('language', 'en') == 'en' else 'Systran/faster-whisper-small'),
         'language': data.get('language', 'en'),
         'gateway_ip': data.get('gateway_ip', ''),
     }

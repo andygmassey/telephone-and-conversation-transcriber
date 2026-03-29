@@ -20,11 +20,28 @@ NC='\033[0m'
 
 INSTALL_DIR="$HOME/gramps-transcriber"
 VENV_DIR="$HOME/gramps-env"
-VOSK_DIR="$HOME/vosk-uk"
+VOSK_LANG="${GRAMPS_LANG:-en-gb}"
+VOSK_DIR="$HOME/vosk-model"
 SYSTEMD_DIR="$HOME/.config/systemd/user"
 REPO_URL="https://github.com/andygmassey/telephone-and-conversation-transcriber.git"
 BRANCH="${GRAMPS_BRANCH:-main}"
-VOSK_MODEL_URL="https://alphacephei.com/vosk/models/vosk-model-small-en-gb-0.15.zip"
+
+# Vosk model URLs by language (small models for Pi)
+case "$VOSK_LANG" in
+    de)    VOSK_MODEL_NAME="vosk-model-small-de-0.15" ;;
+    fr)    VOSK_MODEL_NAME="vosk-model-small-fr-0.22" ;;
+    es)    VOSK_MODEL_NAME="vosk-model-small-es-0.42" ;;
+    it)    VOSK_MODEL_NAME="vosk-model-small-it-0.22" ;;
+    pt)    VOSK_MODEL_NAME="vosk-model-small-pt-0.3" ;;
+    nl)    VOSK_MODEL_NAME="vosk-model-small-nl-0.22" ;;
+    ru)    VOSK_MODEL_NAME="vosk-model-small-ru-0.22" ;;
+    zh)    VOSK_MODEL_NAME="vosk-model-small-cn-0.22" ;;
+    ja)    VOSK_MODEL_NAME="vosk-model-small-ja-0.22" ;;
+    hi)    VOSK_MODEL_NAME="vosk-model-small-hi-0.22" ;;
+    tr)    VOSK_MODEL_NAME="vosk-model-small-tr-0.3" ;;
+    *)     VOSK_MODEL_NAME="vosk-model-small-en-gb-0.15" ;;
+esac
+VOSK_MODEL_URL="https://alphacephei.com/vosk/models/${VOSK_MODEL_NAME}.zip"
 TOTAL_STEPS=8
 
 step() {
@@ -173,7 +190,7 @@ else
     VOSK_ZIP="/tmp/vosk-model.zip"
     curl -sSL "$VOSK_MODEL_URL" -o "$VOSK_ZIP" || fail "Couldn't download the speech model."
     unzip -o -q "$VOSK_ZIP" -d /tmp || fail "Couldn't unpack the speech model."
-    mv /tmp/vosk-model-small-en-gb-0.15 "$VOSK_DIR" || fail "Couldn't move the speech model into place."
+    mv "/tmp/${VOSK_MODEL_NAME}" "$VOSK_DIR" || fail "Couldn't move the speech model into place."
     rm -f "$VOSK_ZIP"
 fi
 

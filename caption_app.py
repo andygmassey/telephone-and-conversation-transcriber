@@ -37,7 +37,7 @@ def debug_print(*args, **kwargs):
         print('[DEBUG]', *args, **kwargs)
 
 # Paths
-VOSK_MODEL = os.path.expanduser(CONFIG.get('vosk_model_path', '~/vosk-uk'))
+VOSK_MODEL = os.path.expanduser(CONFIG.get('vosk_model_path', '~/vosk-model'))
 FONT_PATH = os.path.expanduser('~/gramps-transcriber/fonts/DSEG14Classic-Bold.ttf')
 STT_LANGUAGE = CONFIG.get('language', 'en')
 PHONE_MUTED_FILE = '/tmp/phone_muted'
@@ -355,8 +355,9 @@ def faster_whisper_thread():
         except ImportError:
             ram_gb = 4  # Assume Pi-class hardware if psutil not available
         if ram_gb < 16 and whisper_model in ('large-v3', 'large-v2', 'large'):
-            print(f'Warning: {whisper_model} is too large for this device ({ram_gb:.0f}GB RAM), falling back to small.en', flush=True)
-            whisper_model = 'small.en'
+            fallback = 'small.en' if STT_LANGUAGE == 'en' else 'small'
+            print(f'Warning: {whisper_model} is too large for this device ({ram_gb:.0f}GB RAM), falling back to {fallback}', flush=True)
+            whisper_model = fallback
         print(f'Loading Whisper model ({whisper_model})...', flush=True)
         model = WhisperModel(
             whisper_model,
@@ -592,7 +593,8 @@ def whisper_thread():
 
     try:
         WHISPER_BIN = os.path.expanduser('~/whisper.cpp/build/bin/whisper-stream')
-        WHISPER_MODEL = os.path.expanduser('~/whisper.cpp/models/ggml-base.en-q5_0.bin')
+        _wcpp_default = '~/whisper.cpp/models/ggml-base.en-q5_0.bin' if STT_LANGUAGE == 'en' else '~/whisper.cpp/models/ggml-base-q5_0.bin'
+        WHISPER_MODEL = os.path.expanduser(CONFIG.get('whisper_cpp_model_path', _wcpp_default))
 
         if not os.path.exists(WHISPER_BIN):
             raise FileNotFoundError(f"whisper-stream not found: {WHISPER_BIN}")

@@ -571,6 +571,34 @@
             const lang = document.getElementById('stt-language').value;
             const note = document.getElementById('language-note');
             note.style.display = lang === 'en' ? 'none' : 'block';
+            updateModelOptions(lang);
+        }
+
+        function updateModelOptions(lang) {
+            const isEn = lang === 'en';
+            const suffix = isEn ? '.en' : '';
+            const label = isEn ? ' (English-optimised)' : ' (multilingual)';
+
+            // Update offline whisper model dropdown
+            const whisperSel = document.getElementById('whisper-model');
+            if (whisperSel) {
+                whisperSel.innerHTML = ''
+                    + '<option value="tiny' + suffix + '">tiny' + suffix + ' (fastest - recommended for Raspberry Pi)</option>'
+                    + '<option value="base' + suffix + '">base' + suffix + ' (fast, slightly more accurate)</option>'
+                    + '<option value="small' + suffix + '" selected>small' + suffix + ' (good balance - default)</option>'
+                    + '<option value="medium' + suffix + '">medium' + suffix + ' (slower, more accurate)</option>'
+                    + '<option value="large-v3">large-v3 (slowest, most accurate - needs powerful hardware)</option>';
+            }
+
+            // Update LAN model dropdown
+            const lanSel = document.getElementById('lan-model');
+            if (lanSel) {
+                lanSel.innerHTML = ''
+                    + '<option value="Systran/faster-whisper-tiny' + suffix + '">tiny' + suffix + ' (fastest, ~1GB VRAM)</option>'
+                    + '<option value="Systran/faster-whisper-small' + suffix + '" selected>small' + suffix + ' (good balance, ~2GB VRAM)</option>'
+                    + '<option value="Systran/faster-whisper-medium' + suffix + '">medium' + suffix + ' (more accurate, ~5GB VRAM)</option>'
+                    + '<option value="Systran/faster-whisper-large-v3">large-v3 (most accurate, ~10GB VRAM)</option>';
+            }
         }
 
         // ─── Speech mode ────────────────────────────────────────
