@@ -3,16 +3,26 @@
 import subprocess
 import time
 import os
+import json
 import numpy as np
 import threading
 
-PHONE_CARD = 0
+# Load config to get phone card number
+CONFIG_PATH = os.path.expanduser('~/gramps-transcriber/config.json')
+try:
+    with open(CONFIG_PATH) as f:
+        _config = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    _config = {}
+
+PHONE_CARD = _config.get('phone_card', 0)
 STATUS_FILE = "/tmp/phone_muted"
 ENERGY_THRESHOLD = 0.003
 ACTIVE_SECONDS = 1
 
 def card_exists(card_num):
-    result = subprocess.run(["arecord", "-l"], capture_output=True, text=True)
+    env = dict(os.environ, LC_ALL='C')
+    result = subprocess.run(["arecord", "-l"], capture_output=True, text=True, env=env)
     return f"card {card_num}:" in result.stdout
 
 def write_status(active):

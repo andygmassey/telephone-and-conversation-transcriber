@@ -37,7 +37,7 @@ def debug_print(*args, **kwargs):
         print('[DEBUG]', *args, **kwargs)
 
 # Paths
-VOSK_MODEL = os.path.expanduser('~/vosk-uk')
+VOSK_MODEL = os.path.expanduser(CONFIG.get('vosk_model_path', '~/vosk-uk'))
 FONT_PATH = os.path.expanduser('~/gramps-transcriber/fonts/DSEG14Classic-Bold.ttf')
 PHONE_MUTED_FILE = '/tmp/phone_muted'
 SILENCE_TIMEOUT = 90
@@ -278,7 +278,8 @@ def write_phone_status(active):
 def find_audio_device(name_pattern):
     """Find ALSA device by name pattern, returns hw:X,0 or None"""
     try:
-        result = subprocess.run(['arecord', '-l'], capture_output=True, text=True, timeout=5)
+        env = dict(os.environ, LC_ALL='C')
+        result = subprocess.run(['arecord', '-l'], capture_output=True, text=True, timeout=5, env=env)
         for line in result.stdout.split('\n'):
             if name_pattern.lower() in line.lower():
                 match = re.search(r'card (\d+):', line)

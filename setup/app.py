@@ -48,8 +48,9 @@ def detect_audio_devices():
     """Parse arecord -l into a friendly list of microphones."""
     devices = []
     try:
+        env = dict(os.environ, LC_ALL='C')
         result = subprocess.run(
-            ['arecord', '-l'], capture_output=True, text=True, timeout=5
+            ['arecord', '-l'], capture_output=True, text=True, timeout=5, env=env
         )
         for line in result.stdout.split('\n'):
             match = re.search(r'card (\d+):.*\[(.+?)\].*device (\d+):.*\[(.+?)\]', line)
