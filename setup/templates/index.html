@@ -62,6 +62,31 @@
         <div id="step-speech" class="step">
             <h1>How should speech be turned into text?</h1>
 
+            <div class="field-group">
+                <label>What language will people be speaking?</label>
+                <select id="stt-language" class="device-select" onchange="onLanguageChange()">
+                    <option value="en" selected>English</option>
+                    <option value="de">Deutsch (German)</option>
+                    <option value="fr">Français (French)</option>
+                    <option value="es">Español (Spanish)</option>
+                    <option value="it">Italiano (Italian)</option>
+                    <option value="pt">Português (Portuguese)</option>
+                    <option value="nl">Nederlands (Dutch)</option>
+                    <option value="pl">Polski (Polish)</option>
+                    <option value="ru">Русский (Russian)</option>
+                    <option value="zh">中文 (Chinese)</option>
+                    <option value="ja">日本語 (Japanese)</option>
+                    <option value="ko">한국어 (Korean)</option>
+                    <option value="hi">हिन्दी (Hindi)</option>
+                    <option value="ar">العربية (Arabic)</option>
+                    <option value="tr">Türkçe (Turkish)</option>
+                    <option value="sv">Svenska (Swedish)</option>
+                    <option value="da">Dansk (Danish)</option>
+                    <option value="no">Norsk (Norwegian)</option>
+                </select>
+                <p class="help" id="language-note" style="display:none; color: #e8a735;">Note: for non-English languages, use Whisper models without the ".en" suffix (e.g. "small" instead of "small.en").</p>
+            </div>
+
             <div class="choice-cards">
                 <div class="choice-card" id="choice-online" onclick="pickSpeechMode('online')">
                     <div class="choice-radio selected"></div>
@@ -317,6 +342,10 @@
                     <span class="summary-value" id="summary-phone">—</span>
                 </div>
                 <div class="summary-row">
+                    <span class="summary-label">Language</span>
+                    <span class="summary-value" id="summary-language">—</span>
+                </div>
+                <div class="summary-row">
                     <span class="summary-label">Speech-to-text</span>
                     <span class="summary-value" id="summary-stt">—</span>
                 </div>
@@ -537,6 +566,13 @@
             });
         }
 
+        // ─── Language selection ───────────────────────────────
+        function onLanguageChange() {
+            const lang = document.getElementById('stt-language').value;
+            const note = document.getElementById('language-note');
+            note.style.display = lang === 'en' ? 'none' : 'block';
+        }
+
         // ─── Speech mode ────────────────────────────────────────
         function pickSpeechMode(mode) {
             speechMode = mode;
@@ -607,6 +643,10 @@
             document.getElementById('summary-phone').textContent =
                 phoneSel.value ? phoneText : 'None';
 
+            const langSel = document.getElementById('stt-language');
+            document.getElementById('summary-language').textContent =
+                langSel.options[langSel.selectedIndex]?.text || 'English';
+
             if (speechMode === 'online') {
                 const provider = getSelectedProvider();
                 document.getElementById('summary-stt').textContent = providerNames[provider] || provider;
@@ -647,6 +687,7 @@
                 google_key: provider === 'google' ? apiKey : '',
                 lan_url: provider === 'lan' ? document.getElementById('lan-url').value.trim() : '',
                 lan_model: provider === 'lan' ? document.getElementById('lan-model').value : '',
+                language: document.getElementById('stt-language').value,
                 gateway_ip: document.getElementById('gateway-ip').value.trim(),
             };
 
@@ -772,6 +813,13 @@
             if (config.lan_model) {
                 const lanModelSel = document.getElementById('lan-model');
                 if (lanModelSel) lanModelSel.value = config.lan_model;
+            }
+            if (config.language) {
+                const langSel = document.getElementById('stt-language');
+                if (langSel) {
+                    langSel.value = config.language;
+                    onLanguageChange();
+                }
             }
             if (config.gateway_ip) {
                 document.getElementById('gateway-ip').value = config.gateway_ip;

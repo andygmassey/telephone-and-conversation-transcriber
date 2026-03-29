@@ -320,6 +320,7 @@ def api_save():
         'google_key': data.get('google_key', ''),
         'lan_url': data.get('lan_url', ''),
         'lan_model': data.get('lan_model', 'Systran/faster-whisper-small.en'),
+        'language': data.get('language', 'en'),
         'gateway_ip': data.get('gateway_ip', ''),
     }
 

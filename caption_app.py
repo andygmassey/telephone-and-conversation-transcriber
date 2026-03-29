@@ -39,6 +39,7 @@ def debug_print(*args, **kwargs):
 # Paths
 VOSK_MODEL = os.path.expanduser(CONFIG.get('vosk_model_path', '~/vosk-uk'))
 FONT_PATH = os.path.expanduser('~/gramps-transcriber/fonts/DSEG14Classic-Bold.ttf')
+STT_LANGUAGE = CONFIG.get('language', 'en')
 PHONE_MUTED_FILE = '/tmp/phone_muted'
 SILENCE_TIMEOUT = 90
 PHONE_SILENCE_TIMEOUT = 10
@@ -426,7 +427,7 @@ def faster_whisper_thread():
                 # Transcribe
                 segments, info = model.transcribe(
                     audio,
-                    language="en",
+                    language=STT_LANGUAGE,
                     beam_size=1,
                     best_of=1,
                     temperature=0,
@@ -608,7 +609,7 @@ def whisper_thread():
             '-c', audio_device,
             '--step', '3000',
             '--length', '5000',
-            '-l', 'en',
+            '-l', STT_LANGUAGE,
         ]
 
         env = os.environ.copy()
@@ -725,7 +726,7 @@ def deepgram_thread():
         if not arecord:
             raise RuntimeError('Could not start arecord after 4 attempts')
 
-        url = f'wss://api.deepgram.com/v1/listen?model=nova-2&language=en-GB&smart_format=true&encoding=linear16&sample_rate={sample_rate}'
+        url = f'wss://api.deepgram.com/v1/listen?model=nova-2&language={STT_LANGUAGE}&smart_format=true&encoding=linear16&sample_rate={sample_rate}'
 
         ws_connected = threading.Event()
         ws_error = threading.Event()
@@ -972,7 +973,7 @@ def azure_thread():
         import azure.cognitiveservices.speech as speechsdk
 
         speech_config = speechsdk.SpeechConfig(subscription=api_key, region=region)
-        speech_config.speech_recognition_language = 'en-GB'
+        speech_config.speech_recognition_language = STT_LANGUAGE
 
         audio_device = get_audio_device()
         # Azure SDK can use ALSA device directly
@@ -1184,7 +1185,7 @@ def google_thread():
                 'config': {
                     'encoding': 'LINEAR16',
                     'sampleRateHertz': sample_rate,
-                    'languageCode': 'en-GB',
+                    'languageCode': STT_LANGUAGE,
                     'enableAutomaticPunctuation': True,
                 },
                 'audio': {'content': audio_b64},
@@ -1220,7 +1221,7 @@ def openai_thread():
             'https://api.openai.com/v1/audio/transcriptions',
             headers={'Authorization': f'Bearer {api_key}'},
             files={'file': ('chunk.wav', wav_data, 'audio/wav')},
-            data={'model': 'whisper-1', 'language': 'en'},
+            data={'model': 'whisper-1', 'language': STT_LANGUAGE},
             timeout=15,
         )
         resp.raise_for_status()
@@ -1247,7 +1248,7 @@ def groq_thread():
             'https://api.groq.com/openai/v1/audio/transcriptions',
             headers={'Authorization': f'Bearer {api_key}'},
             files={'file': ('chunk.wav', wav_data, 'audio/wav')},
-            data={'model': 'whisper-large-v3', 'language': 'en'},
+            data={'model': 'whisper-large-v3', 'language': STT_LANGUAGE},
             timeout=15,
         )
         resp.raise_for_status()
@@ -1274,7 +1275,7 @@ def lan_thread():
         resp = requests.post(
             f'{lan_url}/v1/audio/transcriptions',
             files={'file': ('chunk.wav', wav_data, 'audio/wav')},
-            data={'model': lan_model, 'language': 'en'},
+            data={'model': lan_model, 'language': STT_LANGUAGE},
             timeout=30,
         )
         resp.raise_for_status()
@@ -1301,7 +1302,7 @@ def interfaze_thread():
             'https://api.interfaze.ai/v1/audio/transcriptions',
             headers={'Authorization': f'Bearer {api_key}'},
             files={'file': ('chunk.wav', wav_data, 'audio/wav')},
-            data={'model': 'interfaze-beta', 'language': 'en'},
+            data={'model': 'interfaze-beta', 'language': STT_LANGUAGE},
             timeout=15,
         )
         resp.raise_for_status()
