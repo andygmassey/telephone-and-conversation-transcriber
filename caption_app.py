@@ -359,11 +359,12 @@ def faster_whisper_thread():
             print(f'Warning: {whisper_model} is too large for this device ({ram_gb:.0f}GB RAM), falling back to {fallback}', flush=True)
             whisper_model = fallback
         print(f'Loading Whisper model ({whisper_model})...', flush=True)
+        cpu_count = os.cpu_count() or 4
         model = WhisperModel(
             whisper_model,
             device="cpu",
-            compute_type="int8",
-            cpu_threads=4,
+            compute_type="auto",
+            cpu_threads=cpu_count,
             num_workers=1
         )
         print('Whisper model loaded', flush=True)

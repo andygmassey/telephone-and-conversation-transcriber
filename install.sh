@@ -127,6 +127,7 @@ sudo apt-get install -y -qq \
     curl \
     unzip \
     avahi-daemon \
+    fonts-noto-color-emoji \
     2>/dev/null || fail "Couldn't install required packages."
 
 ok "All system packages installed"
