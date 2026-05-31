@@ -291,19 +291,29 @@ def find_audio_device(name_pattern):
     return None
 
 
+def to_plughw(dev):
+    """Wrap a raw hw: device in ALSA's plug layer so it resamples/downmixes.
+    Many USB mics only support 48kHz stereo natively; arecord on the raw hw:
+    device at 16kHz mono fails instantly. plughw: converts transparently and
+    is a no-op when the device already supports the requested format."""
+    if dev and dev.startswith('hw:'):
+        return 'plug' + dev
+    return dev
+
+
 def get_audio_device():
     """Get appropriate audio device based on current state"""
     if state.use_phone_audio:
         configured = CONFIG.get('phone_device')
         if configured:
-            return configured
+            return to_plughw(configured)
         dev = find_audio_device('0x4d9') or find_audio_device('2832') or find_audio_device('phone') or 'hw:0,0'
     else:
         configured = CONFIG.get('room_device')
         if configured:
-            return configured
+            return to_plughw(configured)
         dev = find_audio_device('tonor') or find_audio_device('usb') or 'hw:1,0'
-    return dev
+    return to_plughw(dev)
 
 
 def ensure_mic_volume():

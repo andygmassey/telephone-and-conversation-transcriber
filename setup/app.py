@@ -74,6 +74,11 @@ def detect_audio_devices():
 
 def test_audio_device(hw_id, duration=3, sample_rate=16000):
     """Record a short clip from a device and return the audio energy level (0-100)."""
+    # Use plughw: so ALSA resamples/downmixes for mics that don't natively
+    # support 16kHz mono (most USB mics only do 48kHz stereo). Recording from
+    # the raw hw: device fails instantly on those, which reads as silence.
+    if hw_id and hw_id.startswith('hw:'):
+        hw_id = 'plug' + hw_id
     try:
         proc = subprocess.run(
             ['arecord', '-D', hw_id, '-f', 'S16_LE', '-r', str(sample_rate),
