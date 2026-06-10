@@ -108,6 +108,7 @@
                         <optgroup label="Words appear every few seconds in batches">
                             <option value="groq">Groq (free, very fast)</option>
                             <option value="interfaze">Interfaze (low cost)</option>
+                            <option value="60db">60db (low cost, multilingual)</option>
                             <option value="openai">OpenAI Whisper</option>
                             <option value="google">Google Cloud Speech</option>
                         </optgroup>
@@ -206,6 +207,24 @@
                     <div class="field-group">
                         <label for="interfaze-key">Your Interfaze key</label>
                         <input type="text" id="interfaze-key" placeholder="Paste your key here" autocomplete="off" spellcheck="false">
+                    </div>
+                </div>
+
+                <!-- 60db -->
+                <div id="provider-60db" class="provider-instructions" style="display:none">
+                    <div class="callout">
+                        <h3>You'll need a 60db account</h3>
+                        <p class="muted">60db is a low-cost, multilingual speech-to-text service.</p>
+                        <ol class="simple-steps">
+                            <li>Go to <a href="https://60db.ai/" target="_blank" rel="noopener">60db.ai</a> and create an account</li>
+                            <li>Go to your dashboard and find your API key</li>
+                            <li>Copy it and paste it below</li>
+                        </ol>
+                    </div>
+                    <div class="field-group">
+                        <label for="60db-key">Your 60db key</label>
+                        <input type="text" id="60db-key" placeholder="Paste your key here" autocomplete="off" spellcheck="false">
+                        <p class="help">It usually starts with "sk_live_".</p>
                     </div>
                 </div>
 
@@ -429,13 +448,14 @@
         }
 
         // ─── Provider picker (switches instructions + key field) ─
-        const providers = ['deepgram', 'assemblyai', 'azure', 'groq', 'interfaze', 'openai', 'google'];
+        const providers = ['deepgram', 'assemblyai', 'azure', 'groq', 'interfaze', '60db', 'openai', 'google'];
         const providerNames = {
             deepgram: 'Deepgram',
             assemblyai: 'AssemblyAI',
             azure: 'Microsoft Azure',
             groq: 'Groq',
             interfaze: 'Interfaze',
+            '60db': '60db',
             openai: 'OpenAI Whisper',
             google: 'Google Cloud',
         };
@@ -464,6 +484,7 @@
                 azure: 'azure-key',
                 groq: 'groq-key',
                 interfaze: 'interfaze-key',
+                '60db': '60db-key',
                 openai: 'openai-key',
                 google: 'google-key',
             };
@@ -518,6 +539,7 @@
                 azure_region: provider === 'azure' ? document.getElementById('azure-region').value.trim() : '',
                 groq_key: provider === 'groq' ? apiKey : '',
                 interfaze_key: provider === 'interfaze' ? apiKey : '',
+                '60db_key': provider === '60db' ? apiKey : '',
                 openai_key: provider === 'openai' ? apiKey : '',
                 google_key: provider === 'google' ? apiKey : '',
                 gateway_ip: document.getElementById('gateway-ip').value.trim(),
@@ -580,6 +602,7 @@
                 azure_key: 'azure-key',
                 groq_key: 'groq-key',
                 interfaze_key: 'interfaze-key',
+                '60db_key': '60db-key',
                 openai_key: 'openai-key',
                 google_key: 'google-key',
             };

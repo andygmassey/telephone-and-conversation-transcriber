@@ -151,6 +151,7 @@ def api_save():
         'interfaze_key': data.get('interfaze_key', ''),
         'openai_key': data.get('openai_key', ''),
         'google_key': data.get('google_key', ''),
+        '60db_key': data.get('60db_key', ''),
         'gateway_ip': data.get('gateway_ip', ''),
     }
 

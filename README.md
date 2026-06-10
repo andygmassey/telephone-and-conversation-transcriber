@@ -86,7 +86,7 @@ You don't need to type anything on the touchscreen. Here's how it goes:
 ## Features
 
 - **Live Captions** — real-time speech-to-text displayed on a touchscreen
-- **7 Cloud Services** — Deepgram, AssemblyAI, Azure, Groq, Interfaze, OpenAI Whisper, Google Cloud
+- **8 Cloud Services** — Deepgram, AssemblyAI, Azure, Groq, Interfaze, 60db, OpenAI Whisper, Google Cloud
 - **3 Offline Engines** — Faster Whisper, Vosk, Whisper.cpp — works even without internet
 - **Dual Audio Sources** — transcribes both landline phone calls and in-room conversation
 - **Flip-Clock Display** — split-flap style clock when idle, auto-dims at night
@@ -108,6 +108,7 @@ The transcriber is primarily built and tested with **English (British English)**
 | **OpenAI Whisper** | 50+ | Good multilingual support |
 | **Groq** (Whisper) | 50+ | Same as OpenAI Whisper |
 | **Interfaze** | Not tested | Likely multilingual — feedback welcome |
+| **60db** | Multilingual | Auto language detection; not extensively tested — feedback welcome |
 | **Faster Whisper** (offline) | 50+ | Same languages as Whisper |
 | **Vosk** (offline) | 20+ | Needs a separate model download per language — see [Vosk models](https://alphacephei.com/vosk/models) |
 | **Whisper.cpp** (offline) | 50+ | Same languages as Whisper |
@@ -116,7 +117,7 @@ The transcriber is primarily built and tested with **English (British English)**
 
 ## Cloud Services Compared
 
-The setup wizard lets you choose from 7 different cloud speech services. Here's how they compare:
+The setup wizard lets you choose from 8 different cloud speech services. Here's how they compare:
 
 | Service | Speed | Free tier | Cost after free tier | Best for |
 |---|---|---|---|---|
@@ -125,10 +126,11 @@ The setup wizard lets you choose from 7 different cloud speech services. Here's 
 | **Azure Speech** | Instant | 5 hours/month free forever | ~$0.01/min | If you already use Microsoft |
 | **Groq** | Few seconds delay | Free (~8 hours/day) | Free | Free and very good |
 | **Interfaze** | Few seconds delay | Pay as you go | ~$0.003–0.009/min | Low cost |
+| **60db** | Few seconds delay | Pay as you go | Low cost | Low cost, multilingual |
 | **OpenAI Whisper** | Few seconds delay | Pay as you go | ~$0.006/min | If you already use OpenAI |
 | **Google Cloud** | Few seconds delay | $300 new account credit | ~$0.006/min | If you already use Google |
 
-**"Instant" vs "few seconds delay"** — The top three services show words on screen as they're being spoken, almost in real-time. The bottom four send audio in short batches, so words appear a few seconds after they're said. Both work well — it just depends whether you need to follow a fast conversation or are happy with a slight delay.
+**"Instant" vs "few seconds delay"** — The top three services show words on screen as they're being spoken, almost in real-time. The bottom five send audio in short batches, so words appear a few seconds after they're said. Both work well — it just depends whether you need to follow a fast conversation or are happy with a slight delay.
 
 ## Usage
 

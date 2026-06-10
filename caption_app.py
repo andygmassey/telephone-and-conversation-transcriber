@@ -1237,6 +1237,33 @@ def interfaze_thread():
     _chunked_api_thread('Interfaze', transcribe)
 
 
+def sixtydb_thread():
+    """60db Speech-to-Text API (chunked batch upload)"""
+    api_key = CONFIG.get('60db_key')
+    if not api_key:
+        print('No 60db API key', flush=True)
+        emitter.status_changed.emit('no-key')
+        state.thread_alive = False
+        emitter.thread_died.emit('online')
+        return
+
+    import requests
+
+    def transcribe(audio_bytes, sample_rate):
+        wav_data = _make_wav(audio_bytes, sample_rate)
+        resp = requests.post(
+            'https://api.60db.ai/stt',
+            headers={'Authorization': f'Bearer {api_key}'},
+            files={'file': ('chunk.wav', wav_data, 'audio/wav')},
+            data={'language': 'en'},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json().get('text', '')
+
+    _chunked_api_thread('60db', transcribe)
+
+
 def start_transcription(mode):
     """Start transcription with cleanup"""
     state.kill_proc()  # Targeted kill only — no blanket pkill
@@ -1262,6 +1289,7 @@ def start_transcription(mode):
             'interfaze': interfaze_thread,
             'openai': openai_thread,
             'google': google_thread,
+            '60db': sixtydb_thread,
         }
         target = provider_threads.get(provider, deepgram_thread)
         print(f'Starting online transcription with {provider}', flush=True)
@@ -1527,7 +1555,7 @@ class CaptionView(QWidget):
         if status == 'switching':
             self.status_label.setText('⏳')
             self.status_label.setStyleSheet('font-size: 30px; background: transparent;')
-        elif status in ('vosk', 'deepgram', 'assemblyai', 'azure', 'google', 'openai', 'groq', 'interfaze', 'whisper', 'faster-whisper'):
+        elif status in ('vosk', 'deepgram', 'assemblyai', 'azure', 'google', 'openai', 'groq', 'interfaze', '60db', 'whisper', 'faster-whisper'):
             self.status_label.setText('🎤')
             self.status_label.setStyleSheet('font-size: 30px; background: transparent;')
         elif status == 'no-key':
