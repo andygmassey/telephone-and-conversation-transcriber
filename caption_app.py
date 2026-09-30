@@ -10,10 +10,355 @@ import queue
 import json
 from datetime import datetime
 
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QLabel,
-    QVBoxLayout, QHBoxLayout, QWidget, QScroller, QStackedWidget)
-from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
-from PyQt6.QtGui import QFont, QFontDatabase, QTextCursor, QPainter, QColor, QLinearGradient, QPen
+try:
+    from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QLabel,
+        QVBoxLayout, QHBoxLayout, QWidget, QScroller, QStackedWidget)
+    from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
+    from PyQt6.QtGui import QFont, QFontDatabase, QTextCursor, QPainter, QColor, QLinearGradient, QPen
+    HAS_PYQT = True
+except ImportError:
+    HAS_PYQT = False
+
+    class QObject:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    def pyqtSignal(*args, **kwargs):
+        class _Signal:
+            def __init__(self):
+                self._callbacks = []
+            def connect(self, fn):
+                self._callbacks.append(fn)
+            def emit(self, *a, **kw):
+                for fn in self._callbacks:
+                    try:
+                        fn(*a, **kw)
+                    except Exception:
+                        pass
+            def __get__(self, instance, owner):
+                return self
+        return _Signal()
+
+    class QWidget:
+        def __init__(self, parent=None, *args, **kwargs):
+            self._parent = parent
+            self._style_sheet = ""
+            self._layout = None
+            self._w = 400
+            self._h = 400
+        def setStyleSheet(self, s):
+            self._style_sheet = s
+        def styleSheet(self):
+            return self._style_sheet
+        def setContentsMargins(self, *args):
+            pass
+        def setLayout(self, layout):
+            self._layout = layout
+        def repaint(self):
+            pass
+        def update(self):
+            pass
+        def setFixedSize(self, w, h=None):
+            if h is not None:
+                self._w, self._h = w, h
+        def setFixedWidth(self, w):
+            self._w = w
+        def setFixedHeight(self, h):
+            self._h = h
+        def width(self):
+            return self._w
+        def height(self):
+            return self._h
+        def hide(self):
+            pass
+        def show(self):
+            pass
+        def grabGesture(self, *args):
+            pass
+        def keyPressEvent(self, e):
+            pass
+        def wheelEvent(self, e):
+            pass
+        def mousePressEvent(self, e):
+            pass
+        def event(self, e):
+            return False
+
+    class QMainWindow(QWidget):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._central = None
+        def setWindowTitle(self, *args):
+            pass
+        def setWindowFlags(self, *args):
+            pass
+        def showFullScreen(self):
+            pass
+        def setCentralWidget(self, w):
+            self._central = w
+
+    class QLabel(QWidget):
+        def __init__(self, text="", parent=None):
+            super().__init__(parent)
+            self._text = text
+        def setText(self, t):
+            self._text = t
+        def text(self):
+            return self._text
+        def setAlignment(self, *args):
+            pass
+
+    class _ScrollBarStub:
+        def __init__(self):
+            self._style_sheet = ""
+        def setStyleSheet(self, s):
+            self._style_sheet = s
+        def styleSheet(self):
+            return self._style_sheet
+
+    class _DocumentStub:
+        def __init__(self, editor):
+            self.editor = editor
+            self._default_font = None
+        def blockCount(self):
+            return len(self.editor._plain_text.split('\n'))
+        def setDefaultFont(self, font):
+            self._default_font = font
+        def defaultFont(self):
+            return self._default_font or self.editor._font
+
+    class QTextEdit(QWidget):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._plain_text = ""
+            self._scrollbar = _ScrollBarStub()
+            self._font = None
+            self._doc = _DocumentStub(self)
+            self._scrollbar_policy = 0
+            self._interaction_flags = 0
+            self._read_only = False
+        def setReadOnly(self, ro):
+            self._read_only = ro
+        def setTextInteractionFlags(self, flags):
+            self._interaction_flags = flags
+        def verticalScrollBar(self):
+            return self._scrollbar
+        def setVerticalScrollBarPolicy(self, policy):
+            self._scrollbar_policy = policy
+        def verticalScrollBarPolicy(self):
+            return self._scrollbar_policy
+        def viewport(self):
+            return self
+        def setFont(self, font):
+            self._font = font
+        def font(self):
+            return self._font
+        def textCursor(self):
+            return _TextCursorStub(self)
+        def setTextCursor(self, c):
+            pass
+        def ensureCursorVisible(self):
+            pass
+        def toPlainText(self):
+            return self._plain_text
+        def document(self):
+            return self._doc
+
+    class _TextCursorStub:
+        def __init__(self, editor):
+            self.editor = editor
+        def movePosition(self, *args, **kwargs):
+            pass
+        def insertText(self, text):
+            self.editor._plain_text += text
+        def removeSelectedText(self):
+            pass
+        def deleteChar(self):
+            pass
+
+    class QVBoxLayout:
+        def __init__(self, parent=None):
+            self.widgets = []
+            if parent:
+                parent.setLayout(self)
+        def setContentsMargins(self, *args):
+            pass
+        def addWidget(self, w):
+            self.widgets.append(w)
+        def addLayout(self, l):
+            pass
+        def addStretch(self, *args):
+            pass
+        def setAlignment(self, *args):
+            pass
+        def setSpacing(self, *args):
+            pass
+
+    class QHBoxLayout(QVBoxLayout):
+        pass
+
+    class QStackedWidget(QWidget):
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.widgets = []
+            self._current_index = 0
+        def addWidget(self, w):
+            self.widgets.append(w)
+        def setCurrentIndex(self, i):
+            self._current_index = i
+        def currentIndex(self):
+            return self._current_index
+
+    class QScroller:
+        class ScrollerGestureType:
+            LeftMouseButtonGesture = 0
+        @classmethod
+        def grabGesture(cls, *args):
+            pass
+
+    class QFont:
+        class Weight:
+            Bold = 75
+            Normal = 50
+        def __init__(self, family="Helvetica", size=36, weight=Weight.Normal):
+            self.family = family
+            self.point_size = size
+            self.weight = weight
+        def pointSize(self):
+            return self.point_size
+
+    class _FontMetricsStub:
+        def horizontalAdvance(self, *args):
+            return 100
+        def capHeight(self):
+            return 50
+
+    class QFontDatabase:
+        @classmethod
+        def addApplicationFont(cls, *args):
+            return -1
+        @classmethod
+        def applicationFontFamilies(cls, *args):
+            return ['Arial']
+
+    class QTextCursor:
+        class MoveOperation:
+            Start = 0
+            End = 1
+            NextBlock = 2
+        class MoveMode:
+            MoveAnchor = 0
+            KeepAnchor = 1
+
+    class QTimer:
+        def __init__(self):
+            self.timeout = pyqtSignal()
+            self._interval = 0
+            self._running = False
+        def start(self, ms=0):
+            self._interval = ms
+            self._running = True
+        def stop(self):
+            self._running = False
+        @classmethod
+        def singleShot(cls, ms, fn):
+            pass
+
+    class Qt:
+        class AlignmentFlag:
+            AlignCenter = 0x0084
+        class WindowType:
+            FramelessWindowHint = 0x00000800
+        class ScrollBarPolicy:
+            ScrollBarAlwaysOn = 2
+        class TextInteractionFlag:
+            NoTextInteraction = 0
+        class Key:
+            Key_Escape = 0x01000000
+            Key_Plus = 0x2b
+            Key_Equal = 0x3d
+            Key_Minus = 0x2d
+            Key_Underscore = 0x5f
+            Key_0 = 0x30
+            Key_C = 0x43
+            Key_c = 0x63
+            Key_1 = 0x31
+            Key_2 = 0x32
+            Key_3 = 0x33
+            Key_4 = 0x34
+            Key_S = 0x53
+            Key_s = 0x73
+            Key_M = 0x4d
+            Key_m = 0x6d
+            Key_L = 0x4c
+            Key_l = 0x6c
+        class KeyboardModifier:
+            NoModifier = 0x00000000
+            ShiftModifier = 0x02000000
+            ControlModifier = 0x04000000
+            AltModifier = 0x08000000
+            MetaModifier = 0x10000000
+        class GestureType:
+            PinchGesture = 2
+
+    class QApplication:
+        def __init__(self, *args):
+            pass
+        @classmethod
+        def quit(cls):
+            pass
+        @classmethod
+        def processEvents(cls):
+            pass
+        @classmethod
+        def instance(cls):
+            return None
+        def exec(self):
+            return 0
+
+    class QColor:
+        def __init__(self, *args):
+            pass
+
+    class QPainter:
+        class RenderHint:
+            Antialiasing = 1
+        def __init__(self, *args):
+            self._fm = _FontMetricsStub()
+        def begin(self, *args):
+            pass
+        def end(self):
+            pass
+        def setPen(self, *args):
+            pass
+        def setBrush(self, *args):
+            pass
+        def setFont(self, *args):
+            pass
+        def setRenderHint(self, *args):
+            pass
+        def setClipping(self, *args):
+            pass
+        def drawRect(self, *args):
+            pass
+        def drawRoundedRect(self, *args):
+            pass
+        def drawText(self, *args):
+            pass
+        def drawLine(self, *args):
+            pass
+        def fontMetrics(self):
+            return self._fm
+
+    class QLinearGradient:
+        def __init__(self, *args):
+            pass
+        def setColorAt(self, *args):
+            pass
+
+    class QPen:
+        def __init__(self, *args):
+            pass
 
 # Load config from setup wizard, or use defaults
 CONFIG_PATH = os.path.expanduser('~/gramps-transcriber/config.json')
@@ -26,6 +371,119 @@ def load_config():
         return {}
 
 CONFIG = load_config()
+
+
+def save_config(updates):
+    """Save config updates to CONFIG_PATH, preserving existing keys."""
+    try:
+        dir_name = os.path.dirname(CONFIG_PATH)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
+        current = load_config()
+        current.update(updates)
+        with open(CONFIG_PATH, 'w') as f:
+            json.dump(current, f, indent=4)
+        CONFIG.update(current)
+        return True
+    except Exception as e:
+        print(f"Warning: Failed to save config: {e}", flush=True)
+        return False
+
+
+# Caption font size configuration and boundary limits
+MIN_FONT_SIZE = 12
+MAX_FONT_SIZE = 80
+DEFAULT_FONT_SIZE = 36
+FONT_SIZE_STEP = 4
+
+FONT_PRESETS = {
+    'S': 28,
+    'M': 36,
+    'L': 48,
+}
+
+
+def clamp_font_size(size):
+    """Normalize and clamp font size within boundary guards."""
+    if isinstance(size, str):
+        size_upper = size.strip().upper()
+        if size_upper in FONT_PRESETS:
+            return FONT_PRESETS[size_upper]
+        try:
+            size = float(size)
+        except (ValueError, TypeError):
+            return DEFAULT_FONT_SIZE
+    try:
+        val = int(round(float(size)))
+    except (TypeError, ValueError):
+        val = DEFAULT_FONT_SIZE
+    return max(MIN_FONT_SIZE, min(MAX_FONT_SIZE, val))
+
+
+def get_next_font_size(current_size, step=FONT_SIZE_STEP):
+    """Calculate next incremental font size bounded by MAX_FONT_SIZE."""
+    current = clamp_font_size(current_size)
+    return clamp_font_size(current + step)
+
+
+def get_prev_font_size(current_size, step=FONT_SIZE_STEP):
+    """Calculate previous decremental font size bounded by MIN_FONT_SIZE."""
+    current = clamp_font_size(current_size)
+    return clamp_font_size(current - step)
+
+
+def save_font_size(size):
+    """Persist font size setting to configuration file."""
+    clamped = clamp_font_size(size)
+    return save_config({'font_size': clamped})
+
+
+def get_caption_scrollbar_style(bg_color='#000000'):
+    """
+    Generate high-contrast, clearly visible scrollbar stylesheet.
+    Provides an alternate color for the handle and visible track borders
+    so the scrollbar does not blend into dark or light backgrounds.
+    """
+    is_light = str(bg_color).strip().lower() in ('#ffffff', '#fff', 'white')
+    if is_light:
+        track_bg = '#e2e8f0'
+        track_border = '#cbd5e1'
+        handle_bg = '#475569'
+        handle_active = '#1e293b'
+    else:
+        # High contrast on dark backgrounds
+        track_bg = '#262626'
+        track_border = '#404040'
+        # Distinct, intuitive accent/alternate handle color (slate/blue-gray)
+        handle_bg = '#5b82a6'
+        handle_active = '#7da8d0'
+
+    return (
+        f'QScrollBar:vertical {{'
+        f' background: {track_bg};'
+        f' width: 32px;'
+        f' margin: 0px;'
+        f' border-radius: 16px;'
+        f' border: 2px solid {track_border};'
+        f'}}'
+        f'QScrollBar::handle:vertical {{'
+        f' background: {handle_bg};'
+        f' min-height: 60px;'
+        f' border-radius: 13px;'
+        f' margin: 3px;'
+        f'}}'
+        f'QScrollBar::handle:vertical:hover, QScrollBar::handle:vertical:pressed {{'
+        f' background: {handle_active};'
+        f'}}'
+        f'QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{'
+        f' height: 0px;'
+        f' background: none;'
+        f' border: none;'
+        f'}}'
+        f'QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{'
+        f' background: none;'
+        f'}}'
+    )
 
 # Paths
 VOSK_MODEL = os.path.expanduser('~/vosk-uk')
@@ -1388,8 +1846,12 @@ class ClockView(QWidget):
 class CaptionView(QWidget):
     def __init__(self):
         super().__init__()
-        self.font_sizes = {'S': 28, 'M': 36, 'L': 48}
-        self.current_size = 'M'
+        self.font_sizes = dict(FONT_PRESETS)
+        initial_font_size = clamp_font_size(
+            CONFIG.get('font_size', DEFAULT_FONT_SIZE)
+        )
+        self.font_size = initial_font_size
+        self.current_size = initial_font_size
         self.color_schemes = [
             ('W/B', '#ffffff', '#000000'),
             ('B/W', '#000000', '#ffffff'),
@@ -1404,12 +1866,16 @@ class CaptionView(QWidget):
         top_bar = QHBoxLayout()
 
         self.size_buttons = {}
-        for size in ['S', 'M', 'L']:
-            btn = QLabel(size)
+        for key, text, handler in [
+            ('-', '-', lambda e: self.decrease_font_size()),
+            ('+', '+', lambda e: self.increase_font_size()),
+            ('0', '0', lambda e: self.reset_font_size()),
+        ]:
+            btn = QLabel(text)
             btn.setFixedSize(50, 50)
             btn.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            btn.mousePressEvent = lambda e, s=size: self.set_size(s)
-            self.size_buttons[size] = btn
+            btn.mousePressEvent = handler
+            self.size_buttons[key] = btn
             top_bar.addWidget(btn)
 
         spacer = QLabel('  ')
@@ -1449,21 +1915,55 @@ class CaptionView(QWidget):
         self.text.setReadOnly(True)
         self.text.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self.text.setStyleSheet('background: black; color: white; border: none;')
-        self.text.verticalScrollBar().setStyleSheet(
-            'QScrollBar:vertical { background: #222; width: 30px; border-radius: 15px; }'
-            'QScrollBar::handle:vertical { background: #666; min-height: 60px; border-radius: 15px; }'
-            'QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }'
-        )
         self.text.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.update_scrollbar_style()
         QScroller.grabGesture(self.text.viewport(), QScroller.ScrollerGestureType.LeftMouseButtonGesture)
+        try:
+            self.grabGesture(Qt.GestureType.PinchGesture)
+        except Exception:
+            pass
         layout.addWidget(self.text)
 
         self.update_size_buttons()
         self.update_color_buttons()
-        self.set_size('M')
+        self.set_font_size(initial_font_size, persist=False)
         self.set_color(0)
         self._waiting_for_ready = False
         self._last_text_time = 0
+
+    def update_scrollbar_style(self):
+        bg_col = self.color_schemes[self.current_scheme][2] if hasattr(self, 'current_scheme') and self.current_scheme < len(self.color_schemes) else '#000000'
+        style = get_caption_scrollbar_style(bg_col)
+        self.text.verticalScrollBar().setStyleSheet(style)
+
+    def set_font_size(self, size, persist=True):
+        new_size = clamp_font_size(size)
+        self.font_size = new_size
+        self.current_size = new_size
+        font = QFont('Helvetica', new_size, QFont.Weight.Bold)
+        self.text.setFont(font)
+        if hasattr(self.text, 'document') and hasattr(self.text.document(), 'setDefaultFont'):
+            self.text.document().setDefaultFont(font)
+        self.update_size_buttons()
+        if persist:
+            save_font_size(new_size)
+
+    def set_size(self, size):
+        self.set_font_size(size)
+
+    def increase_font_size(self, step=FONT_SIZE_STEP):
+        new_size = get_next_font_size(self.font_size, step=step)
+        if new_size != self.font_size:
+            self.set_font_size(new_size)
+
+    def decrease_font_size(self, step=FONT_SIZE_STEP):
+        new_size = get_prev_font_size(self.font_size, step=step)
+        if new_size != self.font_size:
+            self.set_font_size(new_size)
+
+    def reset_font_size(self):
+        if self.font_size != DEFAULT_FONT_SIZE:
+            self.set_font_size(DEFAULT_FONT_SIZE)
 
     def toggle_mode(self, event):
         new_mode = 'online' if self.current_mode == 'offline' else 'offline'
@@ -1496,24 +1996,110 @@ class CaptionView(QWidget):
         self.current_mode = mode
         self.update_mode_button()
 
-    def set_size(self, size):
-        self.current_size = size
-        self.text.setFont(QFont('Helvetica', self.font_sizes[size], QFont.Weight.Bold))
-        self.update_size_buttons()
-
     def set_color(self, idx):
         self.current_scheme = idx
         name, text_col, bg_col = self.color_schemes[idx]
         self.text.setStyleSheet(f'background: {bg_col}; color: {text_col}; border: none;')
         self.setStyleSheet(f'background: {bg_col};')
         self.update_color_buttons()
+        self.update_scrollbar_style()
 
     def update_size_buttons(self):
-        for size, btn in self.size_buttons.items():
-            if size == self.current_size:
-                btn.setStyleSheet('background: #444; color: white; border-radius: 25px; font-size: 24px; font-weight: bold;')
+        if not hasattr(self, 'size_buttons'):
+            return
+
+        dec_btn = self.size_buttons.get('-')
+        inc_btn = self.size_buttons.get('+')
+        reset_btn = self.size_buttons.get('0')
+
+        if dec_btn:
+            if self.font_size <= MIN_FONT_SIZE:
+                dec_btn.setStyleSheet(
+                    'background: #181818; color: #444; '
+                    'border-radius: 25px; font-size: 24px;'
+                )
             else:
-                btn.setStyleSheet('background: #222; color: #888; border-radius: 25px; font-size: 24px;')
+                dec_btn.setStyleSheet(
+                    'background: #222; color: white; '
+                    'border-radius: 25px; font-size: 24px; font-weight: bold;'
+                )
+
+        if inc_btn:
+            if self.font_size >= MAX_FONT_SIZE:
+                inc_btn.setStyleSheet(
+                    'background: #181818; color: #444; '
+                    'border-radius: 25px; font-size: 24px;'
+                )
+            else:
+                inc_btn.setStyleSheet(
+                    'background: #222; color: white; '
+                    'border-radius: 25px; font-size: 24px; font-weight: bold;'
+                )
+
+        if reset_btn:
+            if self.font_size == DEFAULT_FONT_SIZE:
+                reset_btn.setStyleSheet(
+                    'background: #444; color: white; '
+                    'border-radius: 25px; font-size: 24px; font-weight: bold;'
+                )
+            else:
+                reset_btn.setStyleSheet(
+                    'background: #222; color: #888; '
+                    'border-radius: 25px; font-size: 24px;'
+                )
+
+    def handle_key_press(self, e):
+        key = e.key() if hasattr(e, 'key') else None
+        if key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
+            self.increase_font_size()
+            return True
+        elif key in (Qt.Key.Key_Minus, Qt.Key.Key_Underscore):
+            self.decrease_font_size()
+            return True
+        elif key == Qt.Key.Key_0:
+            self.reset_font_size()
+            return True
+        return False
+
+    def keyPressEvent(self, e):
+        if self.handle_key_press(e):
+            if hasattr(e, 'accept'):
+                e.accept()
+            return
+        if hasattr(super(), 'keyPressEvent'):
+            super().keyPressEvent(e)
+
+    def wheelEvent(self, event):
+        modifiers = event.modifiers() if hasattr(event, 'modifiers') else 0
+        ctrl_held = bool(
+            modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier)
+        )
+        if ctrl_held:
+            delta = event.angleDelta().y() if hasattr(event, 'angleDelta') else 0
+            if delta > 0:
+                self.increase_font_size()
+            elif delta < 0:
+                self.decrease_font_size()
+            if hasattr(event, 'accept'):
+                event.accept()
+            return
+        if hasattr(super(), 'wheelEvent'):
+            super().wheelEvent(event)
+
+    def event(self, event):
+        if hasattr(Qt, 'GestureType') and hasattr(event, 'gesture'):
+            try:
+                pinch = event.gesture(Qt.GestureType.PinchGesture)
+                if pinch:
+                    scale_factor = pinch.scaleFactor()
+                    if scale_factor > 1.15:
+                        self.increase_font_size()
+                    elif scale_factor < 0.85:
+                        self.decrease_font_size()
+                    return True
+            except Exception:
+                pass
+        return super().event(event) if hasattr(super(), 'event') else False
 
     def update_color_buttons(self):
         for i, btn in enumerate(self.color_buttons):
@@ -1846,8 +2432,16 @@ class MainWindow(QMainWindow):
         self.caption_view.update_mode_button()
 
     def keyPressEvent(self, e):
-        if e.key() == Qt.Key.Key_Escape:
+        if hasattr(e, 'key') and e.key() == Qt.Key.Key_Escape:
             QApplication.quit()
+            return
+        if hasattr(self, 'caption_view') and hasattr(self.caption_view, 'handle_key_press'):
+            if self.caption_view.handle_key_press(e):
+                if hasattr(e, 'accept'):
+                    e.accept()
+                return
+        if hasattr(super(), 'keyPressEvent'):
+            super().keyPressEvent(e)
 
 
 def clear_stale_state():

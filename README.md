@@ -90,7 +90,7 @@ You don't need to type anything on the touchscreen. Here's how it goes:
 - **3 Offline Engines** — Faster Whisper, Vosk, Whisper.cpp — works even without internet
 - **Dual Audio Sources** — transcribes both landline phone calls and in-room conversation
 - **Flip-Clock Display** — split-flap style clock when idle, auto-dims at night
-- **Touch Controls** — font size (S/M/L), colour schemes, drag-to-scroll history
+- **Touch Controls** — font size (+/-/0 increments), colour schemes, drag-to-scroll history
 - **Auto Phone Detection** — automatically switches to phone audio when a call begins
 - **Bulletproof Reliability** — watchdog timers, auto-restart, health monitoring
 - **Web Setup Wizard** — configure everything from your phone at `http://gramps.local:8080`
@@ -140,7 +140,8 @@ The setup wizard lets you choose from 7 different cloud speech services. Here's 
 
 ### Touch Controls
 
-- **S / M / L** — change font size
+- **- / + / 0** — adjust font size in increments, or reset to default (36pt)
+- **Keyboard Shortcuts** — Ctrl/Cmd + Plus to increase, Ctrl/Cmd + Minus to decrease, Ctrl/Cmd + 0 to reset (or bare +/-/0)
 - **Colour circles** — switch colour scheme (white/black, black/white, yellow/black, green/black)
 - **ONLINE / OFFLINE** — toggle between cloud and offline engines
 - **Drag** — scroll through caption history

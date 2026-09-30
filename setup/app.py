@@ -25,7 +25,9 @@ def load_config():
 
 
 def save_config(data):
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+    dir_name = os.path.dirname(CONFIG_PATH)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
     with open(CONFIG_PATH, 'w') as f:
         json.dump(data, f, indent=4)
 
@@ -153,6 +155,12 @@ def api_save():
         'google_key': data.get('google_key', ''),
         'gateway_ip': data.get('gateway_ip', ''),
     }
+
+    existing = load_config()
+    if 'font_size' in data:
+        config['font_size'] = data['font_size']
+    elif 'font_size' in existing:
+        config['font_size'] = existing['font_size']
 
     save_config(config)
 
