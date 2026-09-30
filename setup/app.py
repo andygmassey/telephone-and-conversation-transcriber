@@ -8,9 +8,44 @@ import subprocess
 import time
 import struct
 
-from flask import Flask, render_template, request, jsonify
+try:
+    from flask import Flask, render_template, request, jsonify
+    HAS_FLASK = True
+except ImportError:
+    HAS_FLASK = False
+    class _MockRequest:
+        def __init__(self):
+            self.json_data = {}
+        def get_json(self):
+            return self.json_data
+
+    request = _MockRequest()
+    def jsonify(data):
+        return data
+
+    def render_template(template_name, **context):
+        return f"Rendered {template_name}"
+
+    class Flask:
+        def __init__(self, name):
+            self.name = name
+            self.routes = {}
+        def route(self, rule, **options):
+            def decorator(f):
+                self.routes[rule] = f
+                return f
+            return decorator
+        def run(self, *args, **kwargs):
+            pass
 
 app = Flask(__name__)
+
+try:
+    from color_schemes import COLOR_SCHEMES, DEFAULT_COLOR_SCHEME, get_color_scheme
+except ImportError:
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from color_schemes import COLOR_SCHEMES, DEFAULT_COLOR_SCHEME, get_color_scheme
 
 CONFIG_PATH = os.path.expanduser('~/gramps-transcriber/config.json')
 CREDENTIALS_PATH = os.path.expanduser('~/gramps-transcriber/credentials.py')
@@ -133,26 +168,40 @@ def api_test_audio():
     return jsonify({'level': level, 'hw_id': hw_id})
 
 
+@app.route('/api/color-schemes')
+def api_color_schemes():
+    return jsonify({
+        'presets': COLOR_SCHEMES,
+        'default': DEFAULT_COLOR_SCHEME,
+    })
+
+
 @app.route('/api/save', methods=['POST'])
 def api_save():
     data = request.get_json() or {}
+    existing = load_config()
 
-    config = {
-        'room_device': data.get('room_device', ''),
-        'phone_device': data.get('phone_device', ''),
-        'speech_mode': data.get('speech_mode', 'online'),
-        'stt_provider': data.get('stt_provider', 'deepgram'),
-        'offline_model': data.get('offline_model', 'faster-whisper'),
-        'deepgram_key': data.get('deepgram_key', ''),
-        'assemblyai_key': data.get('assemblyai_key', ''),
-        'azure_key': data.get('azure_key', ''),
-        'azure_region': data.get('azure_region', 'uksouth'),
-        'groq_key': data.get('groq_key', ''),
-        'interfaze_key': data.get('interfaze_key', ''),
-        'openai_key': data.get('openai_key', ''),
-        'google_key': data.get('google_key', ''),
-        'gateway_ip': data.get('gateway_ip', ''),
-    }
+    config = dict(existing)
+    config.update({
+        'room_device': data.get('room_device', existing.get('room_device', '')),
+        'phone_device': data.get('phone_device', existing.get('phone_device', '')),
+        'speech_mode': data.get('speech_mode', existing.get('speech_mode', 'online')),
+        'stt_provider': data.get('stt_provider', existing.get('stt_provider', 'deepgram')),
+        'offline_model': data.get('offline_model', existing.get('offline_model', 'faster-whisper')),
+        'deepgram_key': data.get('deepgram_key', existing.get('deepgram_key', '')),
+        'assemblyai_key': data.get('assemblyai_key', existing.get('assemblyai_key', '')),
+        'azure_key': data.get('azure_key', existing.get('azure_key', '')),
+        'azure_region': data.get('azure_region', existing.get('azure_region', 'uksouth')),
+        'groq_key': data.get('groq_key', existing.get('groq_key', '')),
+        'interfaze_key': data.get('interfaze_key', existing.get('interfaze_key', '')),
+        'openai_key': data.get('openai_key', existing.get('openai_key', '')),
+        'google_key': data.get('google_key', existing.get('google_key', '')),
+        'gateway_ip': data.get('gateway_ip', existing.get('gateway_ip', '')),
+        'color_scheme': data.get('color_scheme', existing.get('color_scheme', DEFAULT_COLOR_SCHEME)),
+        'text_color': data.get('text_color', existing.get('text_color', COLOR_SCHEMES[DEFAULT_COLOR_SCHEME]['text_color'])),
+        'background_color': data.get('background_color', existing.get('background_color', COLOR_SCHEMES[DEFAULT_COLOR_SCHEME]['background_color'])),
+        'font_size': data.get('font_size', existing.get('font_size', 'M')),
+    })
 
     save_config(config)
 

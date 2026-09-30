@@ -270,6 +270,50 @@
                     <span class="summary-label">Speech-to-text</span>
                     <span class="summary-value" id="summary-stt">—</span>
                 </div>
+                <div class="summary-row">
+                    <span class="summary-label">Color scheme</span>
+                    <span class="summary-value" id="summary-color">White on Black</span>
+                </div>
+            </div>
+
+            <div class="field-group" style="margin-top: 24px;">
+                <label>Screen Appearance & Accessibility</label>
+                <p class="help">Choose an accessible high-contrast color scheme for captions (meets WCAG AAA contrast):</p>
+                <div class="color-preset-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px;">
+                    <button type="button" class="preset-btn selected" id="btn-scheme-white_on_black" onclick="selectScheme('white_on_black')" style="background: #000000; color: #FFFFFF; border: 3px solid #2563eb; border-radius: 10px; padding: 14px 10px; font-size: 18px; font-weight: bold; cursor: pointer;">
+                        White on Black (Default)
+                    </button>
+                    <button type="button" class="preset-btn" id="btn-scheme-yellow_on_blue" onclick="selectScheme('yellow_on_blue')" style="background: #000080; color: #FFFF00; border: 2px solid #ccc; border-radius: 10px; padding: 14px 10px; font-size: 18px; font-weight: bold; cursor: pointer;">
+                        Yellow on Blue (Cataracts)
+                    </button>
+                    <button type="button" class="preset-btn" id="btn-scheme-green_on_black" onclick="selectScheme('green_on_black')" style="background: #000000; color: #00FF66; border: 2px solid #ccc; border-radius: 10px; padding: 14px 10px; font-size: 18px; font-weight: bold; cursor: pointer;">
+                        Green on Black
+                    </button>
+                    <button type="button" class="preset-btn" id="btn-scheme-black_on_white" onclick="selectScheme('black_on_white')" style="background: #FFFFFF; color: #000000; border: 2px solid #ccc; border-radius: 10px; padding: 14px 10px; font-size: 18px; font-weight: bold; cursor: pointer;">
+                        Black on White
+                    </button>
+                </div>
+
+                <details class="advanced-section" style="margin-top: 10px;">
+                    <summary style="cursor: pointer; color: #2563eb; font-size: 18px;">Custom Colors (Color Wheel)</summary>
+                    <div style="display: flex; gap: 20px; margin-top: 12px; align-items: center; flex-wrap: wrap;">
+                        <div>
+                            <label for="color-picker-text" style="font-size: 16px;">Text color:</label>
+                            <input type="color" id="color-picker-text" value="#FFFFFF" onchange="onCustomColorPicked()" style="width: 60px; height: 40px; cursor: pointer; border-radius: 6px; border: 1px solid #ccc; vertical-align: middle;">
+                        </div>
+                        <div>
+                            <label for="color-picker-bg" style="font-size: 16px;">Background color:</label>
+                            <input type="color" id="color-picker-bg" value="#000000" onchange="onCustomColorPicked()" style="width: 60px; height: 40px; cursor: pointer; border-radius: 6px; border: 1px solid #ccc; vertical-align: middle;">
+                        </div>
+                        <div id="contrast-badge" style="font-size: 16px; font-weight: bold; padding: 6px 12px; border-radius: 6px; background: #dcfce7; color: #15803d;">
+                            Contrast: 21.0:1 (AAA Pass)
+                        </div>
+                    </div>
+                </details>
+
+                <div id="caption-preview" style="margin-top: 14px; padding: 18px; border-radius: 10px; background: #000000; color: #FFFFFF; font-size: 24px; font-weight: bold; text-align: center; border: 1px solid #444;">
+                    Sample Caption Text
+                </div>
             </div>
 
             <details class="advanced-section">
@@ -471,6 +515,79 @@
             return field ? field.value.trim() : '';
         }
 
+        // ─── Color schemes ─────────────────────────────────────
+        const colorSchemes = {
+            'white_on_black': { name: 'White on Black', text: '#FFFFFF', bg: '#000000' },
+            'yellow_on_blue': { name: 'Yellow on Blue', text: '#FFFF00', bg: '#000080' },
+            'green_on_black': { name: 'Green on Black', text: '#00FF66', bg: '#000000' },
+            'black_on_white': { name: 'Black on White', text: '#000000', bg: '#FFFFFF' },
+        };
+        let selectedColorScheme = 'white_on_black';
+        let currentTextColor = '#FFFFFF';
+        let currentBackgroundColor = '#000000';
+
+        function calcLuminance(hex) {
+            hex = hex.replace('#', '');
+            if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+            const rgb = [0, 2, 4].map(i => parseInt(hex.substr(i, 2), 16) / 255);
+            const lin = rgb.map(c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+            return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+        }
+
+        function updateContrastDisplay() {
+            const l1 = calcLuminance(currentTextColor);
+            const l2 = calcLuminance(currentBackgroundColor);
+            const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+            const badge = document.getElementById('contrast-badge');
+            if (badge) {
+                const passed = ratio >= 7.0;
+                badge.textContent = `Contrast: ${ratio.toFixed(1)}:1 (${passed ? 'AAA Pass' : (ratio >= 4.5 ? 'AA Pass' : 'Low Contrast')})`;
+                badge.style.background = passed ? '#dcfce7' : (ratio >= 4.5 ? '#fef9c3' : '#fee2e2');
+                badge.style.color = passed ? '#15803d' : (ratio >= 4.5 ? '#a16207' : '#b91c1c');
+            }
+        }
+
+        function updatePreview() {
+            const preview = document.getElementById('caption-preview');
+            if (preview) {
+                preview.style.background = currentBackgroundColor;
+                preview.style.color = currentTextColor;
+            }
+            const textPicker = document.getElementById('color-picker-text');
+            const bgPicker = document.getElementById('color-picker-bg');
+            if (textPicker) textPicker.value = currentTextColor;
+            if (bgPicker) bgPicker.value = currentBackgroundColor;
+            updateContrastDisplay();
+        }
+
+        function selectScheme(key) {
+            selectedColorScheme = key;
+            if (colorSchemes[key]) {
+                currentTextColor = colorSchemes[key].text;
+                currentBackgroundColor = colorSchemes[key].bg;
+            }
+            document.querySelectorAll('.preset-btn').forEach(btn => {
+                btn.style.border = '2px solid #ccc';
+            });
+            const selBtn = document.getElementById('btn-scheme-' + key);
+            if (selBtn) selBtn.style.border = '3px solid #2563eb';
+            updatePreview();
+            const sumColor = document.getElementById('summary-color');
+            if (sumColor) sumColor.textContent = colorSchemes[key] ? colorSchemes[key].name : key;
+        }
+
+        function onCustomColorPicked() {
+            selectedColorScheme = 'custom';
+            currentTextColor = document.getElementById('color-picker-text').value;
+            currentBackgroundColor = document.getElementById('color-picker-bg').value;
+            document.querySelectorAll('.preset-btn').forEach(btn => {
+                btn.style.border = '2px solid #ccc';
+            });
+            updatePreview();
+            const sumColor = document.getElementById('summary-color');
+            if (sumColor) sumColor.textContent = 'Custom (' + currentTextColor + ' on ' + currentBackgroundColor + ')';
+        }
+
         // ─── Review step ────────────────────────────────────────
         function goToReview() {
             const roomSel = document.getElementById('room-device');
@@ -491,6 +608,13 @@
                 const model = document.getElementById('offline-model').value;
                 document.getElementById('summary-stt').textContent =
                     'Offline — ' + (offlineModelNames[model] || model);
+            }
+
+            const sumColor = document.getElementById('summary-color');
+            if (sumColor) {
+                sumColor.textContent = colorSchemes[selectedColorScheme]
+                    ? colorSchemes[selectedColorScheme].name
+                    : (selectedColorScheme === 'custom' ? `Custom (${currentTextColor} on ${currentBackgroundColor})` : selectedColorScheme);
             }
 
             goTo('step-review');
@@ -521,6 +645,9 @@
                 openai_key: provider === 'openai' ? apiKey : '',
                 google_key: provider === 'google' ? apiKey : '',
                 gateway_ip: document.getElementById('gateway-ip').value.trim(),
+                color_scheme: selectedColorScheme,
+                text_color: currentTextColor,
+                background_color: currentBackgroundColor,
             };
 
             fetch('/api/save', {
@@ -616,6 +743,20 @@
 
             if (config.gateway_ip) {
                 document.getElementById('gateway-ip').value = config.gateway_ip;
+            }
+
+            // Restore color scheme selection
+            if (config.color_scheme && colorSchemes[config.color_scheme]) {
+                selectScheme(config.color_scheme);
+            } else if (config.text_color && config.background_color) {
+                selectedColorScheme = 'custom';
+                currentTextColor = config.text_color;
+                currentBackgroundColor = config.background_color;
+                updatePreview();
+                const sumColor = document.getElementById('summary-color');
+                if (sumColor) sumColor.textContent = 'Custom (' + currentTextColor + ' on ' + currentBackgroundColor + ')';
+            } else {
+                selectScheme('white_on_black');
             }
         })();
     </script>

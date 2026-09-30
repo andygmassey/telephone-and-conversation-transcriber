@@ -10,10 +10,326 @@ import queue
 import json
 from datetime import datetime
 
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QLabel,
-    QVBoxLayout, QHBoxLayout, QWidget, QScroller, QStackedWidget)
-from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
-from PyQt6.QtGui import QFont, QFontDatabase, QTextCursor, QPainter, QColor, QLinearGradient, QPen
+try:
+    from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QLabel,
+        QVBoxLayout, QHBoxLayout, QWidget, QScroller, QStackedWidget)
+    from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
+    from PyQt6.QtGui import QFont, QFontDatabase, QTextCursor, QPainter, QColor, QLinearGradient, QPen
+    HAS_PYQT = True
+except ImportError:
+    HAS_PYQT = False
+    class QObject:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    def pyqtSignal(*args, **kwargs):
+        class _Signal:
+            def __init__(self):
+                self._callbacks = []
+            def connect(self, fn):
+                self._callbacks.append(fn)
+            def emit(self, *a, **kw):
+                for fn in self._callbacks:
+                    try:
+                        fn(*a, **kw)
+                    except Exception:
+                        pass
+            def __get__(self, instance, owner):
+                return self
+        return _Signal()
+
+    class QWidget:
+        def __init__(self, parent=None, *args, **kwargs):
+            self._parent = parent
+            self._style_sheet = ""
+            self._layout = None
+            self._w = 400
+            self._h = 400
+        def setStyleSheet(self, s):
+            self._style_sheet = s
+        def styleSheet(self):
+            return self._style_sheet
+        def setContentsMargins(self, *args):
+            pass
+        def setLayout(self, layout):
+            self._layout = layout
+        def repaint(self):
+            pass
+        def update(self):
+            pass
+        def setFixedSize(self, w, h=None):
+            if h is not None:
+                self._w, self._h = w, h
+        def setFixedWidth(self, w):
+            self._w = w
+        def setFixedHeight(self, h):
+            self._h = h
+        def width(self):
+            return self._w
+        def height(self):
+            return self._h
+        def hide(self):
+            pass
+        def show(self):
+            pass
+
+    class QMainWindow(QWidget):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._central = None
+        def setWindowTitle(self, *args):
+            pass
+        def setWindowFlags(self, *args):
+            pass
+        def showFullScreen(self):
+            pass
+        def setCentralWidget(self, w):
+            self._central = w
+
+    class QLabel(QWidget):
+        def __init__(self, text="", parent=None):
+            super().__init__(parent)
+            self._text = text
+        def setText(self, t):
+            self._text = t
+        def text(self):
+            return self._text
+        def setAlignment(self, *args):
+            pass
+
+    class _ScrollBarStub:
+        def __init__(self):
+            self._style_sheet = ""
+        def setStyleSheet(self, s):
+            self._style_sheet = s
+
+    class _DocumentStub:
+        def __init__(self, editor):
+            self.editor = editor
+        def blockCount(self):
+            return len(self.editor._plain_text.split('\n'))
+
+    class QTextEdit(QWidget):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._plain_text = ""
+            self._scrollbar = _ScrollBarStub()
+            self._font = None
+            self._doc = _DocumentStub(self)
+        def setReadOnly(self, *args):
+            pass
+        def setTextInteractionFlags(self, *args):
+            pass
+        def verticalScrollBar(self):
+            return self._scrollbar
+        def setVerticalScrollBarPolicy(self, *args):
+            pass
+        def viewport(self):
+            return self
+        def setFont(self, font):
+            self._font = font
+        def font(self):
+            return self._font
+        def textCursor(self):
+            return _TextCursorStub(self)
+        def setTextCursor(self, c):
+            pass
+        def ensureCursorVisible(self):
+            pass
+        def toPlainText(self):
+            return self._plain_text
+        def document(self):
+            return self._doc
+
+    class _TextCursorStub:
+        def __init__(self, editor):
+            self.editor = editor
+        def movePosition(self, *args, **kwargs):
+            pass
+        def insertText(self, text):
+            self.editor._plain_text += text
+        def removeSelectedText(self):
+            pass
+        def deleteChar(self):
+            pass
+
+    class QVBoxLayout:
+        def __init__(self, parent=None):
+            self.widgets = []
+            if parent:
+                parent.setLayout(self)
+        def setContentsMargins(self, *args):
+            pass
+        def addWidget(self, w):
+            self.widgets.append(w)
+        def addLayout(self, l):
+            pass
+        def addStretch(self, *args):
+            pass
+        def setAlignment(self, *args):
+            pass
+        def setSpacing(self, *args):
+            pass
+
+    class QHBoxLayout(QVBoxLayout):
+        pass
+
+    class QStackedWidget(QWidget):
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.widgets = []
+            self._current_index = 0
+        def addWidget(self, w):
+            self.widgets.append(w)
+        def setCurrentIndex(self, i):
+            self._current_index = i
+        def currentIndex(self):
+            return self._current_index
+
+    class QScroller:
+        class ScrollerGestureType:
+            LeftMouseButtonGesture = 0
+        @classmethod
+        def grabGesture(cls, *args):
+            pass
+
+    class QFont:
+        class Weight:
+            Bold = 75
+            Normal = 50
+        def __init__(self, family="Helvetica", size=36, weight=Weight.Normal):
+            self.family = family
+            self.point_size = size
+            self.weight = weight
+        def pointSize(self):
+            return self.point_size
+
+    class _FontMetricsStub:
+        def horizontalAdvance(self, *args):
+            return 100
+        def capHeight(self):
+            return 50
+
+    class QFontDatabase:
+        @classmethod
+        def addApplicationFont(cls, *args):
+            return -1
+        @classmethod
+        def applicationFontFamilies(cls, *args):
+            return ['Arial']
+
+    class QTextCursor:
+        class MoveOperation:
+            Start = 0
+            End = 1
+            NextBlock = 2
+        class MoveMode:
+            MoveAnchor = 0
+            KeepAnchor = 1
+
+    class QTimer:
+        def __init__(self):
+            self.timeout = pyqtSignal()
+            self._interval = 0
+            self._running = False
+        def start(self, ms=0):
+            self._interval = ms
+            self._running = True
+        def stop(self):
+            self._running = False
+        @classmethod
+        def singleShot(cls, ms, fn):
+            pass
+
+    class Qt:
+        class AlignmentFlag:
+            AlignCenter = 0x0084
+        class WindowType:
+            FramelessWindowHint = 0x00000800
+        class ScrollBarPolicy:
+            ScrollBarAlwaysOn = 2
+        class TextInteractionFlag:
+            NoTextInteraction = 0
+        class Key:
+            Key_Escape = 0x01000000
+            Key_C = 0x43
+            Key_c = 0x63
+            Key_1 = 0x31
+            Key_2 = 0x32
+            Key_3 = 0x33
+            Key_4 = 0x34
+            Key_Plus = 0x2b
+            Key_Equal = 0x3d
+            Key_Minus = 0x2d
+            Key_Underscore = 0x5f
+            Key_S = 0x53
+            Key_s = 0x73
+            Key_M = 0x4d
+            Key_m = 0x6d
+            Key_L = 0x4c
+            Key_l = 0x6c
+
+    class QApplication:
+        def __init__(self, *args):
+            pass
+        @classmethod
+        def quit(cls):
+            pass
+        @classmethod
+        def processEvents(cls):
+            pass
+        def exec(self):
+            return 0
+
+    class QColor:
+        def __init__(self, *args):
+            pass
+
+    class QPainter:
+        class RenderHint:
+            Antialiasing = 1
+        def __init__(self, *args):
+            self._fm = _FontMetricsStub()
+        def begin(self, *args):
+            pass
+        def end(self):
+            pass
+        def setPen(self, *args):
+            pass
+        def setBrush(self, *args):
+            pass
+        def setFont(self, *args):
+            pass
+        def setRenderHint(self, *args):
+            pass
+        def setClipping(self, *args):
+            pass
+        def drawRect(self, *args):
+            pass
+        def drawRoundedRect(self, *args):
+            pass
+        def drawText(self, *args):
+            pass
+        def drawLine(self, *args):
+            pass
+        def fontMetrics(self):
+            return self._fm
+
+    class QLinearGradient:
+        def __init__(self, *args):
+            pass
+        def setColorAt(self, *args):
+            pass
+
+    class QPen:
+        def __init__(self, *args):
+            pass
+
+from color_schemes import (
+    COLOR_SCHEMES, DEFAULT_COLOR_SCHEME, COLOR_SCHEME_KEYS,
+    get_color_scheme, get_next_scheme_key,
+    calculate_luminance, calculate_contrast_ratio, is_wcag_aaa,
+)
 
 # Load config from setup wizard, or use defaults
 CONFIG_PATH = os.path.expanduser('~/gramps-transcriber/config.json')
@@ -24,6 +340,33 @@ def load_config():
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
+
+def save_config(updates):
+    """Save configuration updates to CONFIG_PATH and update in-memory CONFIG."""
+    try:
+        cfg = load_config()
+        cfg.update(updates)
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        with open(CONFIG_PATH, 'w') as f:
+            json.dump(cfg, f, indent=4)
+        CONFIG.update(updates)
+        return True
+    except Exception as e:
+        print(f"Error saving config: {e}", flush=True)
+        return False
+
+def save_color_scheme(scheme_key, text_color=None, background_color=None):
+    """Save color scheme and optional color overrides to config."""
+    updates = {'color_scheme': scheme_key}
+    if text_color is not None:
+        updates['text_color'] = text_color
+    if background_color is not None:
+        updates['background_color'] = background_color
+    return save_config(updates)
+
+def save_font_size(size):
+    """Save font size to config."""
+    return save_config({'font_size': size})
 
 CONFIG = load_config()
 
@@ -1389,14 +1732,27 @@ class CaptionView(QWidget):
     def __init__(self):
         super().__init__()
         self.font_sizes = {'S': 28, 'M': 36, 'L': 48}
-        self.current_size = 'M'
-        self.color_schemes = [
-            ('W/B', '#ffffff', '#000000'),
-            ('B/W', '#000000', '#ffffff'),
-            ('Y/B', '#ffff00', '#000000'),
-            ('G/B', '#00ff00', '#000000'),
+        self.font_order = ['S', 'M', 'L']
+        self.current_size = CONFIG.get('font_size', 'M')
+        if self.current_size not in self.font_sizes:
+            self.current_size = 'M'
+
+        self.color_presets = [
+            COLOR_SCHEMES['white_on_black'],
+            COLOR_SCHEMES['yellow_on_blue'],
+            COLOR_SCHEMES['green_on_black'],
+            COLOR_SCHEMES['black_on_white'],
         ]
-        self.current_scheme = 0
+        self.color_schemes = [
+            (s['button_label'], s['text_color'], s['background_color'])
+            for s in self.color_presets
+        ]
+
+        saved_scheme = CONFIG.get('color_scheme', DEFAULT_COLOR_SCHEME)
+        scheme_info = get_color_scheme(saved_scheme)
+        self.current_scheme = scheme_info['index']
+        self.text_color = CONFIG.get('text_color', self.color_presets[self.current_scheme]['text_color'])
+        self.background_color = CONFIG.get('background_color', self.color_presets[self.current_scheme]['background_color'])
         self.current_mode = CONFIG.get('speech_mode', 'offline')
 
         layout = QVBoxLayout(self)
@@ -1460,8 +1816,11 @@ class CaptionView(QWidget):
 
         self.update_size_buttons()
         self.update_color_buttons()
-        self.set_size('M')
-        self.set_color(0)
+        self.set_size(self.current_size, persist=False)
+        if 'text_color' in CONFIG and 'background_color' in CONFIG:
+            self.set_custom_color(CONFIG['text_color'], CONFIG['background_color'], persist=False)
+        else:
+            self.set_color(self.current_scheme, persist=False)
         self._waiting_for_ready = False
         self._last_text_time = 0
 
@@ -1496,17 +1855,65 @@ class CaptionView(QWidget):
         self.current_mode = mode
         self.update_mode_button()
 
-    def set_size(self, size):
+    def set_size(self, size, persist=True):
+        if size not in self.font_sizes:
+            size = 'M'
         self.current_size = size
         self.text.setFont(QFont('Helvetica', self.font_sizes[size], QFont.Weight.Bold))
         self.update_size_buttons()
+        if persist:
+            save_font_size(size)
 
-    def set_color(self, idx):
+    def set_color(self, idx_or_key, persist=True):
+        if isinstance(idx_or_key, str):
+            scheme_info = get_color_scheme(idx_or_key)
+            idx = scheme_info['index']
+        elif isinstance(idx_or_key, int) and 0 <= idx_or_key < len(self.color_schemes):
+            idx = idx_or_key
+            scheme_info = get_color_scheme(idx)
+        else:
+            idx = 0
+            scheme_info = get_color_scheme(0)
+
         self.current_scheme = idx
         name, text_col, bg_col = self.color_schemes[idx]
+        self.text_color = text_col
+        self.background_color = bg_col
+
         self.text.setStyleSheet(f'background: {bg_col}; color: {text_col}; border: none;')
         self.setStyleSheet(f'background: {bg_col};')
         self.update_color_buttons()
+
+        if persist:
+            save_color_scheme(scheme_info['key'], text_col, bg_col)
+
+    def set_custom_color(self, text_col, bg_col, persist=True):
+        self.text_color = text_col
+        self.background_color = bg_col
+        self.text.setStyleSheet(f'background: {bg_col}; color: {text_col}; border: none;')
+        self.setStyleSheet(f'background: {bg_col};')
+
+        matched_idx = -1
+        for i, (_, tc, bc) in enumerate(self.color_schemes):
+            if tc.lower() == text_col.lower() and bc.lower() == bg_col.lower():
+                matched_idx = i
+                break
+        self.current_scheme = matched_idx
+        self.update_color_buttons()
+
+        if persist:
+            key = COLOR_SCHEME_KEYS[matched_idx] if matched_idx >= 0 else 'custom'
+            save_color_scheme(key, text_col, bg_col)
+
+    def cycle_color_scheme(self, step=1, persist=True):
+        next_idx = (self.current_scheme + step) % len(self.color_schemes)
+        self.set_color(next_idx, persist=persist)
+
+    def cycle_font_size(self, step=1, persist=True):
+        order = self.font_order
+        curr_idx = order.index(self.current_size) if self.current_size in order else 1
+        new_idx = max(0, min(len(order) - 1, curr_idx + step))
+        self.set_size(order[new_idx], persist=persist)
 
     def update_size_buttons(self):
         for size, btn in self.size_buttons.items():
@@ -1522,6 +1929,29 @@ class CaptionView(QWidget):
                 btn.setStyleSheet(f'background: {bg_col}; color: {text_col}; border-radius: 25px; font-size: 24px; font-weight: bold; border: 3px solid #0af;')
             else:
                 btn.setStyleSheet(f'background: {bg_col}; color: {text_col}; border-radius: 25px; font-size: 24px; font-weight: bold; border: 2px solid #444;')
+
+    def keyPressEvent(self, e):
+        key = e.key()
+        if key in (Qt.Key.Key_C, Qt.Key.Key_c):
+            self.cycle_color_scheme()
+        elif key == Qt.Key.Key_1:
+            self.set_color(0)
+        elif key == Qt.Key.Key_2:
+            self.set_color(1)
+        elif key == Qt.Key.Key_3:
+            self.set_color(2)
+        elif key == Qt.Key.Key_4:
+            self.set_color(3)
+        elif key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
+            self.cycle_font_size(1)
+        elif key in (Qt.Key.Key_Minus, Qt.Key.Key_Underscore):
+            self.cycle_font_size(-1)
+        elif key in (Qt.Key.Key_S, Qt.Key.Key_s):
+            self.set_size('S')
+        elif key in (Qt.Key.Key_M, Qt.Key.Key_m):
+            self.set_size('M')
+        elif key in (Qt.Key.Key_L, Qt.Key.Key_l):
+            self.set_size('L')
 
     def set_status(self, status):
         if status == 'switching':
@@ -1846,8 +2276,29 @@ class MainWindow(QMainWindow):
         self.caption_view.update_mode_button()
 
     def keyPressEvent(self, e):
-        if e.key() == Qt.Key.Key_Escape:
+        key = e.key()
+        if key == Qt.Key.Key_Escape:
             QApplication.quit()
+        elif key in (Qt.Key.Key_C, Qt.Key.Key_c):
+            self.caption_view.cycle_color_scheme()
+        elif key == Qt.Key.Key_1:
+            self.caption_view.set_color(0)
+        elif key == Qt.Key.Key_2:
+            self.caption_view.set_color(1)
+        elif key == Qt.Key.Key_3:
+            self.caption_view.set_color(2)
+        elif key == Qt.Key.Key_4:
+            self.caption_view.set_color(3)
+        elif key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
+            self.caption_view.cycle_font_size(1)
+        elif key in (Qt.Key.Key_Minus, Qt.Key.Key_Underscore):
+            self.caption_view.cycle_font_size(-1)
+        elif key in (Qt.Key.Key_S, Qt.Key.Key_s):
+            self.caption_view.set_size('S')
+        elif key in (Qt.Key.Key_M, Qt.Key.Key_m):
+            self.caption_view.set_size('M')
+        elif key in (Qt.Key.Key_L, Qt.Key.Key_l):
+            self.caption_view.set_size('L')
 
 
 def clear_stale_state():
