@@ -110,6 +110,7 @@
                             <option value="interfaze">Interfaze (low cost)</option>
                             <option value="openai">OpenAI Whisper</option>
                             <option value="google">Google Cloud Speech</option>
+                            <option value="remote">Remote AI / Local Whisper</option>
                         </optgroup>
                     </select>
                     <p class="help">The top group shows words as you speak them — great for live conversation. The bottom group is a few seconds behind but still works well.</p>
@@ -242,6 +243,34 @@
                     <div class="field-group">
                         <label for="google-key">Your Google Cloud API key</label>
                         <input type="text" id="google-key" placeholder="Paste your key here" autocomplete="off" spellcheck="false">
+                    </div>
+                </div>
+
+                <!-- Remote AI / Local Whisper -->
+                <div id="provider-remote" class="provider-instructions" style="display:none">
+                    <div class="callout">
+                        <h3>Connect to a Remote AI or Local LAN Server</h3>
+                        <p class="muted">Send audio to another machine on your local network or a remote server running an OpenAI-compatible Whisper endpoint (e.g. Ollama, Open-WebUI, faster-whisper-server, vLLM). This offloads processing from the Raspberry Pi to your GPU.</p>
+                        <ol class="simple-steps">
+                            <li>Ensure your STT server is running and accessible on your network</li>
+                            <li>Enter the endpoint URL below (e.g. <code>http://192.168.1.100:8000/v1/audio/transcriptions</code>)</li>
+                            <li>Optionally provide a model name and API key if required by your server</li>
+                        </ol>
+                    </div>
+                    <div class="field-group">
+                        <label for="remote-stt-url">Endpoint URL</label>
+                        <input type="text" id="remote-stt-url" placeholder="http://192.168.1.100:8000/v1/audio/transcriptions" autocomplete="off" spellcheck="false">
+                        <p class="help">The server's OpenAI-compatible audio transcriptions endpoint.</p>
+                    </div>
+                    <div class="field-group">
+                        <label for="remote-stt-model">Model name (optional)</label>
+                        <input type="text" id="remote-stt-model" placeholder="whisper-1 (or model name used by server)" autocomplete="off" spellcheck="false">
+                        <p class="help">Defaults to "whisper-1" if left blank.</p>
+                    </div>
+                    <div class="field-group">
+                        <label for="remote-stt-key">API Key (optional)</label>
+                        <input type="text" id="remote-stt-key" placeholder="Leave blank if not required" autocomplete="off" spellcheck="false">
+                        <p class="help">Sent as a Bearer token if provided.</p>
                     </div>
                 </div>
             </div>
@@ -429,7 +458,7 @@
         }
 
         // ─── Provider picker (switches instructions + key field) ─
-        const providers = ['deepgram', 'assemblyai', 'azure', 'groq', 'interfaze', 'openai', 'google'];
+        const providers = ['deepgram', 'assemblyai', 'azure', 'groq', 'interfaze', 'openai', 'google', 'remote'];
         const providerNames = {
             deepgram: 'Deepgram',
             assemblyai: 'AssemblyAI',
@@ -438,6 +467,7 @@
             interfaze: 'Interfaze',
             openai: 'OpenAI Whisper',
             google: 'Google Cloud',
+            remote: 'Remote AI / Local Whisper',
         };
         const offlineModelNames = {
             'faster-whisper': 'Faster Whisper',
@@ -466,6 +496,7 @@
                 interfaze: 'interfaze-key',
                 openai: 'openai-key',
                 google: 'google-key',
+                remote: 'remote-stt-key',
             };
             const field = document.getElementById(keyFields[provider]);
             return field ? field.value.trim() : '';
@@ -520,6 +551,9 @@
                 interfaze_key: provider === 'interfaze' ? apiKey : '',
                 openai_key: provider === 'openai' ? apiKey : '',
                 google_key: provider === 'google' ? apiKey : '',
+                remote_stt_url: document.getElementById('remote-stt-url') ? document.getElementById('remote-stt-url').value.trim() : '',
+                remote_stt_model: document.getElementById('remote-stt-model') ? document.getElementById('remote-stt-model').value.trim() : '',
+                remote_stt_key: document.getElementById('remote-stt-key') ? document.getElementById('remote-stt-key').value.trim() : '',
                 gateway_ip: document.getElementById('gateway-ip').value.trim(),
             };
 
@@ -582,6 +616,9 @@
                 interfaze_key: 'interfaze-key',
                 openai_key: 'openai-key',
                 google_key: 'google-key',
+                remote_stt_key: 'remote-stt-key',
+                remote_stt_url: 'remote-stt-url',
+                remote_stt_model: 'remote-stt-model',
             };
             for (const [configKey, fieldId] of Object.entries(keyMap)) {
                 if (config[configKey]) {

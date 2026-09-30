@@ -30,7 +30,7 @@ def save_config(data):
         json.dump(data, f, indent=4)
 
 
-def save_credentials(deepgram_key=None, azure_key=None, azure_region=None):
+def save_credentials(deepgram_key=None, azure_key=None, azure_region=None, remote_stt_url=None, remote_stt_key=None, remote_stt_model=None):
     """Write credentials.py so caption_app.py can import it."""
     lines = []
     if deepgram_key:
@@ -38,6 +38,12 @@ def save_credentials(deepgram_key=None, azure_key=None, azure_region=None):
     if azure_key:
         lines.append(f'AZURE_KEY = "{azure_key}"')
         lines.append(f'AZURE_REGION = "{azure_region or "uksouth"}"')
+    if remote_stt_url:
+        lines.append(f'REMOTE_STT_URL = "{remote_stt_url}"')
+    if remote_stt_key:
+        lines.append(f'REMOTE_STT_KEY = "{remote_stt_key}"')
+    if remote_stt_model:
+        lines.append(f'REMOTE_STT_MODEL = "{remote_stt_model}"')
     if lines:
         os.makedirs(os.path.dirname(CREDENTIALS_PATH), exist_ok=True)
         with open(CREDENTIALS_PATH, 'w') as f:
@@ -151,6 +157,9 @@ def api_save():
         'interfaze_key': data.get('interfaze_key', ''),
         'openai_key': data.get('openai_key', ''),
         'google_key': data.get('google_key', ''),
+        'remote_stt_url': data.get('remote_stt_url', ''),
+        'remote_stt_model': data.get('remote_stt_model', ''),
+        'remote_stt_key': data.get('remote_stt_key', ''),
         'gateway_ip': data.get('gateway_ip', ''),
     }
 
@@ -161,6 +170,12 @@ def api_save():
         save_credentials(deepgram_key=config['deepgram_key'])
     elif config.get('azure_key'):
         save_credentials(azure_key=config['azure_key'], azure_region=config['azure_region'])
+    elif config.get('remote_stt_url'):
+        save_credentials(
+            remote_stt_url=config['remote_stt_url'],
+            remote_stt_key=config.get('remote_stt_key'),
+            remote_stt_model=config.get('remote_stt_model'),
+        )
 
     # Restart the caption service so it picks up new config
     try:
@@ -179,7 +194,7 @@ def api_status():
     caption = get_service_status('caption')
     mute = get_service_status('gramps-mute')
     config = load_config()
-    configured = bool(config.get('room_device') or config.get('deepgram_key'))
+    configured = bool(config.get('room_device') or config.get('deepgram_key') or config.get('remote_stt_url'))
     return jsonify({
         'caption': caption,
         'mute': mute,

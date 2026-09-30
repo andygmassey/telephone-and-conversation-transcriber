@@ -10,10 +10,102 @@ import queue
 import json
 from datetime import datetime
 
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QLabel,
-    QVBoxLayout, QHBoxLayout, QWidget, QScroller, QStackedWidget)
-from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
-from PyQt6.QtGui import QFont, QFontDatabase, QTextCursor, QPainter, QColor, QLinearGradient, QPen
+try:
+    from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QLabel,
+        QVBoxLayout, QHBoxLayout, QWidget, QScroller, QStackedWidget)
+    from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
+    from PyQt6.QtGui import QFont, QFontDatabase, QTextCursor, QPainter, QColor, QLinearGradient, QPen
+except ImportError:
+    # Headless / container fallback stubs for testing without GUI/X11 or PyQt6
+    class _DummySignal:
+        def __init__(self, *args, **kwargs):
+            self._callbacks = []
+
+        def connect(self, fn):
+            self._callbacks.append(fn)
+
+        def emit(self, *args, **kwargs):
+            for fn in self._callbacks:
+                try:
+                    fn(*args, **kwargs)
+                except Exception:
+                    pass
+
+        def __get__(self, instance, owner):
+            return self
+
+    def pyqtSignal(*args, **kwargs):
+        return _DummySignal()
+
+    class QObject:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class QApplication:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        @staticmethod
+        def quit():
+            pass
+
+        @staticmethod
+        def instance():
+            return None
+
+        def exec(self):
+            return 0
+
+    class QTimer:
+        def __init__(self, *args, **kwargs):
+            self.timeout = _DummySignal()
+
+        def start(self, *args, **kwargs):
+            pass
+
+        def stop(self):
+            pass
+
+    class _DummyWidget:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: None
+
+        def setStyleSheet(self, *args, **kwargs):
+            pass
+
+        def setLayout(self, *args, **kwargs):
+            pass
+
+        def show(self):
+            pass
+
+        def hide(self):
+            pass
+
+        def update(self):
+            pass
+
+        def document(self):
+            class _DummyDoc:
+                def blockCount(self):
+                    return 0
+            return _DummyDoc()
+
+    QMainWindow = QTextEdit = QLabel = QVBoxLayout = QHBoxLayout = QWidget = QScroller = QStackedWidget = _DummyWidget
+    QFont = QFontDatabase = QTextCursor = QPainter = QColor = QLinearGradient = QPen = _DummyWidget
+
+    class _QtMeta(type):
+        def __getattr__(cls, name):
+            class _SubGroup:
+                def __getattr__(self, subname):
+                    return 0
+            return _SubGroup()
+
+    class Qt(metaclass=_QtMeta):
+        pass
 
 # Load config from setup wizard, or use defaults
 CONFIG_PATH = os.path.expanduser('~/gramps-transcriber/config.json')
@@ -38,8 +130,23 @@ MODE_FILE = '/tmp/gramps_mode'
 # Try to load secrets — check credentials.py first, then config.json
 try:
     from credentials import DEEPGRAM_KEY
-except ImportError:
+except (ImportError, AttributeError):
     DEEPGRAM_KEY = CONFIG.get('deepgram_key')
+
+try:
+    from credentials import REMOTE_STT_URL
+except (ImportError, AttributeError):
+    REMOTE_STT_URL = CONFIG.get('remote_stt_url')
+
+try:
+    from credentials import REMOTE_STT_KEY
+except (ImportError, AttributeError):
+    REMOTE_STT_KEY = CONFIG.get('remote_stt_key')
+
+try:
+    from credentials import REMOTE_STT_MODEL
+except (ImportError, AttributeError):
+    REMOTE_STT_MODEL = CONFIG.get('remote_stt_model')
 
 # Thread-safe state management
 class TranscriptionState:
@@ -1237,6 +1344,147 @@ def interfaze_thread():
     _chunked_api_thread('Interfaze', transcribe)
 
 
+def normalize_remote_url(url: str) -> str:
+    """Normalize a remote OpenAI-compatible STT endpoint URL.
+
+    Accepts host:port, base URLs, /v1, or full /v1/audio/transcriptions endpoints.
+    Ensures http:// or https:// prefix and /v1/audio/transcriptions path.
+    """
+    if not url:
+        return ''
+    url = url.strip()
+    if not url:
+        return ''
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if not parsed.scheme:
+        url = 'http://' + url
+    url = url.rstrip('/')
+    if '/audio/transcriptions' in url:
+        return url
+    if url.endswith('/v1'):
+        return url + '/audio/transcriptions'
+    return url + '/v1/audio/transcriptions'
+
+
+def validate_remote_url(url: str) -> tuple:
+    """Validate a remote STT endpoint URL.
+
+    Returns (is_valid, error_message).
+    """
+    if not url or not str(url).strip():
+        return False, 'URL cannot be empty'
+    norm = normalize_remote_url(url)
+    from urllib.parse import urlparse
+    parsed = urlparse(norm)
+    if not parsed.scheme or parsed.scheme not in ('http', 'https'):
+        return False, f'Invalid URL scheme: {parsed.scheme}'
+    if not parsed.netloc:
+        return False, 'URL must include host or network address'
+    return True, ''
+
+
+def build_remote_headers(api_key: str | None = None) -> dict:
+    """Build HTTP headers for remote STT request, adding Bearer token if API key is provided."""
+    headers = {}
+    if api_key and str(api_key).strip():
+        headers['Authorization'] = f'Bearer {str(api_key).strip()}'
+    return headers
+
+
+def build_remote_payload(model: str | None = None, language: str = 'en') -> dict:
+    """Build form data payload for OpenAI-compatible transcriptions endpoint."""
+    model_name = (model or '').strip() or 'whisper-1'
+    payload = {'model': model_name}
+    if language:
+        payload['language'] = language
+    return payload
+
+
+def build_remote_files(audio_bytes: bytes, sample_rate: int) -> dict:
+    """Wrap raw audio bytes into a WAV payload for multipart/form-data upload."""
+    wav_data = _make_wav(audio_bytes, sample_rate)
+    return {'file': ('chunk.wav', wav_data, 'audio/wav')}
+
+
+def transcribe_remote(
+    audio_bytes: bytes,
+    sample_rate: int,
+    endpoint_url: str,
+    model: str | None = None,
+    api_key: str | None = None,
+    language: str = 'en',
+    timeout: int = 15,
+) -> str:
+    """Post audio chunk to a remote OpenAI-compatible STT endpoint and return transcribed text."""
+    import requests
+
+    if not endpoint_url:
+        raise ValueError('No remote STT endpoint URL provided')
+
+    url = normalize_remote_url(endpoint_url)
+    headers = build_remote_headers(api_key)
+    files = build_remote_files(audio_bytes, sample_rate)
+    data = build_remote_payload(model=model, language=language)
+
+    resp = requests.post(url, headers=headers, files=files, data=data, timeout=timeout)
+    resp.raise_for_status()
+
+    # Parse response - support standard OpenAI JSON {"text": "..."}, variations, or raw text
+    try:
+        content_type = resp.headers.get('content-type', '')
+        if 'application/json' in content_type or resp.text.strip().startswith('{'):
+            body = resp.json()
+            if isinstance(body, dict):
+                return (body.get('text') or body.get('transcription') or '').strip()
+            elif isinstance(body, str):
+                return body.strip()
+    except Exception:
+        pass
+
+    return resp.text.strip()
+
+
+def remote_thread():
+    """Remote / Local OpenAI-compatible Whisper endpoint (chunked)"""
+    url = (
+        REMOTE_STT_URL
+        or CONFIG.get('remote_stt_url')
+        or CONFIG.get('remote_url')
+    )
+    if not url:
+        print('No Remote STT URL configured', flush=True)
+        emitter.status_changed.emit('no-url')
+        state.thread_alive = False
+        emitter.thread_died.emit('online')
+        return
+
+    endpoint_url = normalize_remote_url(url)
+    model = (
+        REMOTE_STT_MODEL
+        or CONFIG.get('remote_stt_model')
+        or CONFIG.get('remote_model')
+        or 'whisper-1'
+    )
+    api_key = (
+        REMOTE_STT_KEY
+        or CONFIG.get('remote_stt_key')
+        or CONFIG.get('remote_key')
+        or CONFIG.get('remote_api_key')
+    )
+
+    def transcribe(audio_bytes, sample_rate):
+        return transcribe_remote(
+            audio_bytes,
+            sample_rate,
+            endpoint_url=endpoint_url,
+            model=model,
+            api_key=api_key,
+        )
+
+    _chunked_api_thread('Remote', transcribe)
+
+
 def start_transcription(mode):
     """Start transcription with cleanup"""
     state.kill_proc()  # Targeted kill only — no blanket pkill
@@ -1252,8 +1500,8 @@ def start_transcription(mode):
     gen = state.next_generation()
     print(f"Starting transcription gen={gen} mode={mode}", flush=True)
 
-    if mode == 'online':
-        provider = CONFIG.get('stt_provider', 'deepgram')
+    if mode in ('online', 'remote'):
+        provider = CONFIG.get('stt_provider', 'deepgram' if mode == 'online' else 'remote')
         provider_threads = {
             'deepgram': deepgram_thread,
             'assemblyai': assemblyai_thread,
@@ -1262,6 +1510,10 @@ def start_transcription(mode):
             'interfaze': interfaze_thread,
             'openai': openai_thread,
             'google': google_thread,
+            'remote': remote_thread,
+            'remote_ai': remote_thread,
+            'remote-whisper': remote_thread,
+            'custom': remote_thread,
         }
         target = provider_threads.get(provider, deepgram_thread)
         print(f'Starting online transcription with {provider}', flush=True)
@@ -1527,11 +1779,14 @@ class CaptionView(QWidget):
         if status == 'switching':
             self.status_label.setText('⏳')
             self.status_label.setStyleSheet('font-size: 30px; background: transparent;')
-        elif status in ('vosk', 'deepgram', 'assemblyai', 'azure', 'google', 'openai', 'groq', 'interfaze', 'whisper', 'faster-whisper'):
+        elif status in ('vosk', 'deepgram', 'assemblyai', 'azure', 'google', 'openai', 'groq', 'interfaze', 'remote', 'remote_ai', 'whisper', 'faster-whisper'):
             self.status_label.setText('🎤')
             self.status_label.setStyleSheet('font-size: 30px; background: transparent;')
         elif status == 'no-key':
             self.status_label.setText('⚠️ NO KEY')
+            self.status_label.setStyleSheet('color: #ff0000; background: #330000; padding: 8px 15px; border-radius: 10px; font-size: 18px; font-weight: bold;')
+        elif status == 'no-url':
+            self.status_label.setText('NO URL')
             self.status_label.setStyleSheet('color: #ff0000; background: #330000; padding: 8px 15px; border-radius: 10px; font-size: 18px; font-weight: bold;')
         elif status == 'error':
             self.status_label.setText('⚠️ ERROR')

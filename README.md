@@ -108,6 +108,7 @@ The transcriber is primarily built and tested with **English (British English)**
 | **OpenAI Whisper** | 50+ | Good multilingual support |
 | **Groq** (Whisper) | 50+ | Same as OpenAI Whisper |
 | **Interfaze** | Not tested | Likely multilingual — feedback welcome |
+| **Remote AI** (Whisper) | 50+ | Supports OpenAI-compatible /v1/audio/transcriptions endpoint (Ollama, Open-WebUI, GPU server) |
 | **Faster Whisper** (offline) | 50+ | Same languages as Whisper |
 | **Vosk** (offline) | 20+ | Needs a separate model download per language — see [Vosk models](https://alphacephei.com/vosk/models) |
 | **Whisper.cpp** (offline) | 50+ | Same languages as Whisper |
@@ -116,7 +117,7 @@ The transcriber is primarily built and tested with **English (British English)**
 
 ## Cloud Services Compared
 
-The setup wizard lets you choose from 7 different cloud speech services. Here's how they compare:
+The setup wizard lets you choose from 8 speech services (cloud providers plus self-hosted Remote AI). Here's how they compare:
 
 | Service | Speed | Free tier | Cost after free tier | Best for |
 |---|---|---|---|---|
@@ -127,6 +128,7 @@ The setup wizard lets you choose from 7 different cloud speech services. Here's 
 | **Interfaze** | Few seconds delay | Pay as you go | ~$0.003–0.009/min | Low cost |
 | **OpenAI Whisper** | Few seconds delay | Pay as you go | ~$0.006/min | If you already use OpenAI |
 | **Google Cloud** | Few seconds delay | $300 new account credit | ~$0.006/min | If you already use Google |
+| **Remote AI** (Ollama/GPU) | Few seconds delay | Free (self-hosted) | Free | Offloading STT to local LAN GPU |
 
 **"Instant" vs "few seconds delay"** — The top three services show words on screen as they're being spoken, almost in real-time. The bottom four send audio in short batches, so words appear a few seconds after they're said. Both work well — it just depends whether you need to follow a fast conversation or are happy with a slight delay.
 
@@ -229,7 +231,7 @@ sudo systemctl enable --now caption-watchdog.timer display-watchdog.timer networ
          └───────────┬───────────┘
                      │
               ┌──────▼──────┐
-              │ Cloud STT   │  ← 7 providers
+              │ STT Service │  ← 8 providers (Cloud / Remote)
               │     OR      │
               │ Offline STT │  ← 3 engines
               └──────┬──────┘
