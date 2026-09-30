@@ -82,11 +82,22 @@
             <div id="offline-model-section" class="offline-model-section" style="display:none">
                 <div class="field-group">
                     <label>Which offline engine would you like to use?</label>
-                    <select id="offline-model" class="device-select">
+                    <select id="offline-model" class="device-select" onchange="updateWhisperModelVisibility()">
                         <option value="faster-whisper">Faster Whisper (recommended — good accuracy, a few seconds delay)</option>
                         <option value="vosk">Vosk (lightweight — less accurate, but very quick)</option>
                         <option value="whisper-cpp">Whisper.cpp (alternative — similar to Faster Whisper)</option>
                     </select>
+                </div>
+                <div id="whisper-model-group" class="field-group">
+                    <label for="whisper-model">Whisper Model Size</label>
+                    <select id="whisper-model" class="device-select">
+                        <option value="tiny" selected>Tiny (recommended for Raspberry Pi)</option>
+                        <option value="base">Base</option>
+                        <option value="small">Small</option>
+                        <option value="medium">Medium</option>
+                        <option value="large">Large</option>
+                    </select>
+                    <p class="help">A Raspberry Pi 4/5 can run tiny in real time. Larger models (base, small, medium, large) require more CPU or a more powerful machine.</p>
                 </div>
                 <div class="callout">
                     <p><strong>Faster Whisper</strong> gives the best results without internet. Words appear every few seconds in batches. It's already installed.</p>
@@ -426,6 +437,17 @@
                 mode === 'online' ? 'block' : 'none';
             document.getElementById('offline-model-section').style.display =
                 mode === 'offline' ? 'block' : 'none';
+            if (mode === 'offline') {
+                updateWhisperModelVisibility();
+            }
+        }
+
+        function updateWhisperModelVisibility() {
+            const engine = document.getElementById('offline-model') ? document.getElementById('offline-model').value : 'faster-whisper';
+            const group = document.getElementById('whisper-model-group');
+            if (group) {
+                group.style.display = (engine === 'vosk') ? 'none' : 'block';
+            }
         }
 
         // ─── Provider picker (switches instructions + key field) ─
@@ -489,8 +511,12 @@
                 document.getElementById('summary-stt').textContent = providerNames[provider] || provider;
             } else {
                 const model = document.getElementById('offline-model').value;
-                document.getElementById('summary-stt').textContent =
-                    'Offline — ' + (offlineModelNames[model] || model);
+                const whisperModel = document.getElementById('whisper-model')?.value || 'tiny';
+                let summaryText = 'Offline — ' + (offlineModelNames[model] || model);
+                if (model === 'faster-whisper' || model === 'whisper-cpp') {
+                    summaryText += ' (' + whisperModel + ')';
+                }
+                document.getElementById('summary-stt').textContent = summaryText;
             }
 
             goTo('step-review');
@@ -503,6 +529,7 @@
             btn.disabled = true;
 
             const offlineModel = document.getElementById('offline-model').value;
+            const whisperModel = document.getElementById('whisper-model') ? document.getElementById('whisper-model').value : 'tiny';
             const provider = speechMode === 'online' ? getSelectedProvider() : offlineModel;
             const apiKey = speechMode === 'online' ? getProviderKey() : '';
 
@@ -512,6 +539,7 @@
                 speech_mode: speechMode,
                 stt_provider: provider,
                 offline_model: offlineModel,
+                whisper_model: whisperModel,
                 deepgram_key: provider === 'deepgram' ? apiKey : '',
                 assemblyai_key: provider === 'assemblyai' ? apiKey : '',
                 azure_key: provider === 'azure' ? apiKey : '',
@@ -598,6 +626,13 @@
                 const offlineSel = document.getElementById('offline-model');
                 if (offlineSel) offlineSel.value = config.offline_model;
             }
+
+            // Restore whisper model selection
+            if (config.whisper_model) {
+                const whisperSel = document.getElementById('whisper-model');
+                if (whisperSel) whisperSel.value = config.whisper_model;
+            }
+            updateWhisperModelVisibility();
 
             // Restore speech mode and provider selection
             const offlineModels = ['faster-whisper', 'vosk', 'whisper-cpp'];

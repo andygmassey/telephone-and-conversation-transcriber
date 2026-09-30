@@ -11,6 +11,7 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+.pytest_cache/
 
 # IDE
 .vscode/

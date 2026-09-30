@@ -5,10 +5,29 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 import struct
 
 from flask import Flask, render_template, request, jsonify
+
+# Add project root to sys.path so whisper_config can be imported
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from whisper_config import DEFAULT_WHISPER_MODEL, ALLOWED_WHISPER_MODELS, validate_whisper_model
+except ImportError:
+    DEFAULT_WHISPER_MODEL = 'tiny'
+    ALLOWED_WHISPER_MODELS = ('tiny', 'base', 'small', 'medium', 'large')
+
+    def validate_whisper_model(model_name):
+        if not model_name or not isinstance(model_name, str):
+            return DEFAULT_WHISPER_MODEL
+        cleaned = model_name.strip().lower()
+        if cleaned in ALLOWED_WHISPER_MODELS:
+            return cleaned
+        if cleaned.endswith('.en') and cleaned[:-3] in ALLOWED_WHISPER_MODELS:
+            return cleaned[:-3]
+        return DEFAULT_WHISPER_MODEL
 
 app = Flask(__name__)
 
@@ -30,7 +49,7 @@ def save_config(data):
         json.dump(data, f, indent=4)
 
 
-def save_credentials(deepgram_key=None, azure_key=None, azure_region=None):
+def save_credentials(deepgram_key=None, azure_key=None, azure_region=None, whisper_model=None):
     """Write credentials.py so caption_app.py can import it."""
     lines = []
     if deepgram_key:
@@ -38,6 +57,8 @@ def save_credentials(deepgram_key=None, azure_key=None, azure_region=None):
     if azure_key:
         lines.append(f'AZURE_KEY = "{azure_key}"')
         lines.append(f'AZURE_REGION = "{azure_region or "uksouth"}"')
+    if whisper_model:
+        lines.append(f'WHISPER_MODEL = "{whisper_model}"')
     if lines:
         os.makedirs(os.path.dirname(CREDENTIALS_PATH), exist_ok=True)
         with open(CREDENTIALS_PATH, 'w') as f:
@@ -137,12 +158,15 @@ def api_test_audio():
 def api_save():
     data = request.get_json() or {}
 
+    whisper_model = validate_whisper_model(data.get('whisper_model', DEFAULT_WHISPER_MODEL))
+
     config = {
         'room_device': data.get('room_device', ''),
         'phone_device': data.get('phone_device', ''),
         'speech_mode': data.get('speech_mode', 'online'),
         'stt_provider': data.get('stt_provider', 'deepgram'),
         'offline_model': data.get('offline_model', 'faster-whisper'),
+        'whisper_model': whisper_model,
         'deepgram_key': data.get('deepgram_key', ''),
         'assemblyai_key': data.get('assemblyai_key', ''),
         'azure_key': data.get('azure_key', ''),
@@ -157,10 +181,12 @@ def api_save():
     save_config(config)
 
     # Also write credentials.py for backwards compatibility
-    if config.get('deepgram_key'):
-        save_credentials(deepgram_key=config['deepgram_key'])
-    elif config.get('azure_key'):
-        save_credentials(azure_key=config['azure_key'], azure_region=config['azure_region'])
+    save_credentials(
+        deepgram_key=config.get('deepgram_key'),
+        azure_key=config.get('azure_key'),
+        azure_region=config.get('azure_region'),
+        whisper_model=whisper_model,
+    )
 
     # Restart the caption service so it picks up new config
     try:

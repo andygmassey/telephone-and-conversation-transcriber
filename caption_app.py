@@ -10,10 +10,319 @@ import queue
 import json
 from datetime import datetime
 
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QLabel,
-    QVBoxLayout, QHBoxLayout, QWidget, QScroller, QStackedWidget)
-from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
-from PyQt6.QtGui import QFont, QFontDatabase, QTextCursor, QPainter, QColor, QLinearGradient, QPen
+try:
+    from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QLabel,
+        QVBoxLayout, QHBoxLayout, QWidget, QScroller, QStackedWidget)
+    from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
+    from PyQt6.QtGui import QFont, QFontDatabase, QTextCursor, QPainter, QColor, QLinearGradient, QPen
+    HAS_PYQT = True
+except ImportError:
+    HAS_PYQT = False
+
+    class QObject:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    def pyqtSignal(*args, **kwargs):
+        class _Signal:
+            def __init__(self):
+                self._callbacks = []
+            def connect(self, fn):
+                self._callbacks.append(fn)
+            def emit(self, *a, **kw):
+                for fn in self._callbacks:
+                    try:
+                        fn(*a, **kw)
+                    except Exception:
+                        pass
+            def __get__(self, instance, owner):
+                return self
+        return _Signal()
+
+    class QWidget:
+        def __init__(self, parent=None, *args, **kwargs):
+            self._parent = parent
+            self._style_sheet = ""
+            self._layout = None
+            self._w = 400
+            self._h = 400
+        def setStyleSheet(self, s):
+            self._style_sheet = s
+        def styleSheet(self):
+            return self._style_sheet
+        def setContentsMargins(self, *args):
+            pass
+        def setLayout(self, layout):
+            self._layout = layout
+        def repaint(self):
+            pass
+        def update(self):
+            pass
+        def setFixedSize(self, w, h=None):
+            if h is not None:
+                self._w, self._h = w, h
+        def setFixedWidth(self, w):
+            self._w = w
+        def setFixedHeight(self, h):
+            self._h = h
+        def width(self):
+            return self._w
+        def height(self):
+            return self._h
+        def hide(self):
+            pass
+        def show(self):
+            pass
+
+    class QMainWindow(QWidget):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._central = None
+        def setWindowTitle(self, *args):
+            pass
+        def setWindowFlags(self, *args):
+            pass
+        def showFullScreen(self):
+            pass
+        def setCentralWidget(self, w):
+            self._central = w
+
+    class QLabel(QWidget):
+        def __init__(self, text="", parent=None):
+            super().__init__(parent)
+            self._text = text
+        def setText(self, t):
+            self._text = t
+        def text(self):
+            return self._text
+        def setAlignment(self, *args):
+            pass
+
+    class _ScrollBarStub:
+        def __init__(self):
+            self._style_sheet = ""
+        def setStyleSheet(self, s):
+            self._style_sheet = s
+
+    class _DocumentStub:
+        def __init__(self, editor):
+            self.editor = editor
+        def blockCount(self):
+            return len(self.editor._plain_text.split('\n'))
+
+    class QTextEdit(QWidget):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._plain_text = ""
+            self._scrollbar = _ScrollBarStub()
+            self._font = None
+            self._doc = _DocumentStub(self)
+        def setReadOnly(self, *args):
+            pass
+        def setTextInteractionFlags(self, *args):
+            pass
+        def verticalScrollBar(self):
+            return self._scrollbar
+        def setVerticalScrollBarPolicy(self, *args):
+            pass
+        def viewport(self):
+            return self
+        def setFont(self, font):
+            self._font = font
+        def font(self):
+            return self._font
+        def textCursor(self):
+            return _TextCursorStub(self)
+        def setTextCursor(self, c):
+            pass
+        def ensureCursorVisible(self):
+            pass
+        def toPlainText(self):
+            return self._plain_text
+        def document(self):
+            return self._doc
+
+    class _TextCursorStub:
+        def __init__(self, editor):
+            self.editor = editor
+        def movePosition(self, *args, **kwargs):
+            pass
+        def insertText(self, text):
+            self.editor._plain_text += text
+        def removeSelectedText(self):
+            pass
+        def deleteChar(self):
+            pass
+
+    class QVBoxLayout:
+        def __init__(self, parent=None):
+            self.widgets = []
+            if parent:
+                parent.setLayout(self)
+        def setContentsMargins(self, *args):
+            pass
+        def addWidget(self, w):
+            self.widgets.append(w)
+        def addLayout(self, l):
+            pass
+        def addStretch(self, *args):
+            pass
+        def setAlignment(self, *args):
+            pass
+        def setSpacing(self, *args):
+            pass
+
+    class QHBoxLayout(QVBoxLayout):
+        pass
+
+    class QStackedWidget(QWidget):
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.widgets = []
+            self._current_index = 0
+        def addWidget(self, w):
+            self.widgets.append(w)
+        def setCurrentIndex(self, i):
+            self._current_index = i
+        def currentIndex(self):
+            return self._current_index
+
+    class QScroller:
+        class ScrollerGestureType:
+            LeftMouseButtonGesture = 0
+        @classmethod
+        def grabGesture(cls, *args):
+            pass
+
+    class QFont:
+        class Weight:
+            Bold = 75
+            Normal = 50
+        def __init__(self, family="Helvetica", size=36, weight=Weight.Normal):
+            self.family = family
+            self.point_size = size
+            self.weight = weight
+        def pointSize(self):
+            return self.point_size
+
+    class _FontMetricsStub:
+        def horizontalAdvance(self, *args):
+            return 100
+        def capHeight(self):
+            return 50
+
+    class QFontDatabase:
+        @classmethod
+        def addApplicationFont(cls, *args):
+            return -1
+        @classmethod
+        def applicationFontFamilies(cls, *args):
+            return ['Arial']
+
+    class QTextCursor:
+        class MoveOperation:
+            Start = 0
+            End = 1
+            NextBlock = 2
+        class MoveMode:
+            MoveAnchor = 0
+            KeepAnchor = 1
+
+    class QTimer:
+        def __init__(self):
+            self.timeout = pyqtSignal()
+            self._interval = 0
+            self._running = False
+        def start(self, ms=0):
+            self._interval = ms
+            self._running = True
+        def stop(self):
+            self._running = False
+        @classmethod
+        def singleShot(cls, ms, fn):
+            pass
+
+    class Qt:
+        class AlignmentFlag:
+            AlignCenter = 0x0084
+        class WindowType:
+            FramelessWindowHint = 0x00000800
+        class ScrollBarPolicy:
+            ScrollBarAlwaysOn = 2
+        class TextInteractionFlag:
+            NoTextInteraction = 0
+
+    class QApplication:
+        def __init__(self, *args):
+            pass
+        @classmethod
+        def quit(cls):
+            pass
+        @classmethod
+        def processEvents(cls):
+            pass
+        def exec(self):
+            return 0
+
+    class QColor:
+        def __init__(self, *args):
+            pass
+
+    class QPainter:
+        class RenderHint:
+            Antialiasing = 1
+        def __init__(self, *args):
+            self._fm = _FontMetricsStub()
+        def begin(self, *args):
+            pass
+        def end(self):
+            pass
+        def setPen(self, *args):
+            pass
+        def setBrush(self, *args):
+            pass
+        def setFont(self, *args):
+            pass
+        def setRenderHint(self, *args):
+            pass
+        def setClipping(self, *args):
+            pass
+        def drawRect(self, *args):
+            pass
+        def drawRoundedRect(self, *args):
+            pass
+        def drawText(self, *args):
+            pass
+        def drawLine(self, *args):
+            pass
+        def fontMetrics(self):
+            return self._fm
+
+    class QLinearGradient:
+        def __init__(self, *args):
+            pass
+        def setColorAt(self, *args):
+            pass
+
+    class QPen:
+        def __init__(self, *args):
+            pass
+
+try:
+    from whisper_config import DEFAULT_WHISPER_MODEL, ALLOWED_WHISPER_MODELS, validate_whisper_model
+except ImportError:
+    DEFAULT_WHISPER_MODEL = 'tiny'
+    ALLOWED_WHISPER_MODELS = ('tiny', 'base', 'small', 'medium', 'large')
+
+    def validate_whisper_model(model_name):
+        if not model_name or not isinstance(model_name, str):
+            return DEFAULT_WHISPER_MODEL
+        cleaned = model_name.strip().lower()
+        if cleaned in ALLOWED_WHISPER_MODELS:
+            return cleaned
+        if cleaned.endswith('.en') and cleaned[:-3] in ALLOWED_WHISPER_MODELS:
+            return cleaned[:-3]
+        return DEFAULT_WHISPER_MODEL
 
 # Load config from setup wizard, or use defaults
 CONFIG_PATH = os.path.expanduser('~/gramps-transcriber/config.json')
@@ -40,6 +349,42 @@ try:
     from credentials import DEEPGRAM_KEY
 except ImportError:
     DEEPGRAM_KEY = CONFIG.get('deepgram_key')
+
+try:
+    from credentials import WHISPER_MODEL
+except ImportError:
+    WHISPER_MODEL = None
+
+if not WHISPER_MODEL:
+    WHISPER_MODEL = CONFIG.get('whisper_model') or os.environ.get('WHISPER_MODEL')
+
+WHISPER_MODEL = validate_whisper_model(WHISPER_MODEL)
+
+
+def get_whisper_model():
+    """Resolve Whisper model from credentials, config.json, or environment variable, validated to allowed options."""
+    model = None
+    try:
+        if 'credentials' in sys.modules and sys.modules['credentials'] is not None:
+            creds = sys.modules['credentials']
+            if hasattr(creds, '__spec__') and creds.__spec__ is not None:
+                import importlib
+                try:
+                    importlib.reload(creds)
+                except Exception:
+                    pass
+            model = getattr(creds, 'WHISPER_MODEL', None)
+        else:
+            import credentials
+            model = getattr(credentials, 'WHISPER_MODEL', None)
+    except Exception:
+        pass
+
+    if not model:
+        cfg = load_config()
+        model = cfg.get('whisper_model') or os.environ.get('WHISPER_MODEL')
+
+    return validate_whisper_model(model)
 
 # Thread-safe state management
 class TranscriptionState:
@@ -319,15 +664,16 @@ def faster_whisper_thread():
         import numpy as np
 
         # Load model
-        print('Loading Whisper model (small.en)...', flush=True)
+        whisper_model = get_whisper_model()
+        print(f'Loading Whisper model ({whisper_model})...', flush=True)
         model = WhisperModel(
-            "small.en",
+            whisper_model,
             device="cpu",
             compute_type="int8",
             cpu_threads=4,
             num_workers=1
         )
-        print('Whisper model loaded', flush=True)
+        print(f'Whisper model ({whisper_model}) loaded', flush=True)
 
         # Audio settings
         SAMPLE_RATE = 16000
@@ -554,7 +900,21 @@ def whisper_thread():
 
     try:
         WHISPER_BIN = os.path.expanduser('~/whisper.cpp/build/bin/whisper-stream')
-        WHISPER_MODEL = os.path.expanduser('~/whisper.cpp/models/ggml-base.en-q5_0.bin')
+        selected_model = get_whisper_model()
+        model_candidates = [
+            os.path.expanduser(f'~/whisper.cpp/models/ggml-{selected_model}.en-q5_0.bin'),
+            os.path.expanduser(f'~/whisper.cpp/models/ggml-{selected_model}.en.bin'),
+            os.path.expanduser(f'~/whisper.cpp/models/ggml-{selected_model}.bin'),
+            os.path.expanduser(f'~/whisper.cpp/models/ggml-{selected_model}-q5_0.bin'),
+            os.path.expanduser('~/whisper.cpp/models/ggml-base.en-q5_0.bin'),
+        ]
+        WHISPER_MODEL = None
+        for cand in model_candidates:
+            if os.path.exists(cand):
+                WHISPER_MODEL = cand
+                break
+        if not WHISPER_MODEL:
+            WHISPER_MODEL = model_candidates[0]
 
         if not os.path.exists(WHISPER_BIN):
             raise FileNotFoundError(f"whisper-stream not found: {WHISPER_BIN}")
